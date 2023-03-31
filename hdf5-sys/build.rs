@@ -711,14 +711,14 @@ mod conda_dl {
 
         pub const DLS: &[(&'static str, &'static str, &'static str)] = &[
             (
-                "hdf5-1.12.0-hc3cf35f_0.tar.bz2",
-                "https://anaconda.org/anaconda/hdf5/1.12.0/download/linux-64/hdf5-1.12.0-hc3cf35f_0.tar.bz2",
-                "1681beaec0bcbd0025731735902744ef4db6a3084d9d325d814ec9758a2da31c",
+                "hdf5-1.12.1-h70be1eb_2.tar.bz2",
+                "https://anaconda.org/anaconda/hdf5/1.12.1/download/linux-64/hdf5-1.12.1-h70be1eb_2.tar.bz2",
+                "30a88eb6e50bb2201d06734f74d3f98624f3b7ff1371607f770bb71d5dd86c61",
             ),
             (
-                "zlib-1.2.11-hfbfcf68_1.tar.bz2",
-                "https://repo.continuum.io/pkgs/main/linux-64/zlib-1.2.11-hfbfcf68_1.tar.bz2",
-                "97c9bd774d08dcc6383c297e4378e1486061e7af426f3e62fda449454de7defb",
+                "zlib-1.2.13-h166bdaf_4.tar.bz2",
+                "https://conda.anaconda.org/conda-forge/linux-64/zlib-1.2.13-h166bdaf_4.tar.bz2",
+                "282ce274ebe6da1fbd52efbb61bd5a93dec0365b14d64566e6819d1691b75300",
             ),
         ];
     }
