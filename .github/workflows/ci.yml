@@ -184,7 +184,6 @@ jobs:
       - name: Build and test all crates
         run: cargo test --workspace -v --features conda --exclude hdf5-derive
 
-
   apt:
     name: apt
     runs-on: ubuntu-${{matrix.ubuntu}}
