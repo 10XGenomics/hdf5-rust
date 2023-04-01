@@ -1,19 +1,19 @@
 #![recursion_limit = "192"]
 
-extern crate proc_macro;
-
 use std::iter;
 use std::mem;
 use std::str::FromStr;
 
 use proc_macro2::{Ident, Span, TokenStream};
+use proc_macro_error::{abort, proc_macro_error};
 use quote::{quote, ToTokens};
 use syn::{
-    parse_macro_input, AttrStyle, Attribute, Data, DeriveInput, Expr, Fields, Index, Meta,
+    parse_macro_input, AttrStyle, Attribute, Data, DeriveInput, Expr, Fields, Index, Lit, Meta,
     NestedMeta, Type, TypeGenerics, TypePath,
 };
 
-#[proc_macro_derive(H5Type)]
+#[proc_macro_derive(H5Type, attributes(hdf5))]
+#[proc_macro_error]
 pub fn derive(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
@@ -61,7 +61,13 @@ where
     }
 }
 
-fn impl_enum(names: Vec<Ident>, values: Vec<Expr>, repr: &Ident) -> TokenStream {
+fn impl_transparent(ty: &Type) -> TokenStream {
+    quote! {
+        <#ty as _h5::types::H5Type>::type_descriptor()
+    }
+}
+
+fn impl_enum(names: &[String], values: &[Expr], repr: &Ident) -> TokenStream {
     let size = Ident::new(
         &format!(
             "U{}",
@@ -78,7 +84,7 @@ fn impl_enum(names: Vec<Ident>, values: Vec<Expr>, repr: &Ident) -> TokenStream 
                 signed: #signed,
                 members: vec![#(
                     _h5::types::EnumMember {
-                        name: stringify!(#names).to_owned(),
+                        name: #names.to_owned(),
                         value: (#values) as #repr as _,
                     }
                 ),*],
@@ -90,7 +96,7 @@ fn impl_enum(names: Vec<Ident>, values: Vec<Expr>, repr: &Ident) -> TokenStream 
 fn is_phantom_data(ty: &Type) -> bool {
     match *ty {
         Type::Path(TypePath { qself: None, ref path }) => {
-            path.segments.iter().last().map(|x| x.ident == "PhantomData").unwrap_or(false)
+            path.segments.iter().last().map_or(false, |x| x.ident == "PhantomData")
         }
         _ => false,
     }
@@ -126,6 +132,28 @@ fn find_repr(attrs: &[Attribute], expected: &[&str]) -> Option<Ident> {
     None
 }
 
+fn find_hdf5_rename(attrs: &[Attribute]) -> Option<String> {
+    if let Some(attr) = attrs.iter().find(|a| a.path.is_ident("hdf5")) {
+        if let Ok(Meta::List(meta_list)) = attr.parse_meta() {
+            let rename_literal = meta_list.nested.iter().find_map(|n| {
+                if let NestedMeta::Meta(Meta::NameValue(name_value)) = n {
+                    if name_value.path.is_ident("rename") {
+                        return Some(&name_value.lit);
+                    }
+                }
+
+                None
+            });
+
+            if let Some(Lit::Str(renamed)) = rename_literal {
+                return Some(renamed.value());
+            }
+        }
+    }
+
+    None
+}
+
 fn pluck<'a, I, F, T, S>(iter: I, func: F) -> Vec<S>
 where
     I: Iterator<Item = &'a T>,
@@ -141,19 +169,32 @@ fn impl_trait(
     match *data {
         Data::Struct(ref data) => match data.fields {
             Fields::Unit => {
-                panic!("Cannot derive H5Type for unit structs");
+                abort!(ty, "cannot derive `H5Type` for unit structs");
             }
             Fields::Named(ref fields) => {
                 let fields: Vec<_> =
                     fields.named.iter().filter(|f| !is_phantom_data(&f.ty)).collect();
                 if fields.is_empty() {
-                    panic!("Cannot derive H5Type for empty structs");
+                    abort!(ty, "cannot derive `H5Type` for empty structs");
                 }
-                find_repr(attrs, &["C"]).expect("H5Type requires #[repr(C)] for structs");
-                let types = pluck(fields.iter(), |f| f.ty.clone());
-                let fields = pluck(fields.iter(), |f| f.ident.clone().unwrap());
-                let names = fields.iter().map(|f| f.to_string()).collect::<Vec<_>>();
-                impl_compound(ty, ty_generics, &fields, &names, &types)
+
+                let repr =
+                    find_repr(attrs, &["C", "packed", "transparent"]).unwrap_or_else(|| {
+                        abort!(ty,
+                    "`H5Type` requires repr(C), repr(packed) or repr(transparent) for structs")
+                    });
+                if repr == "transparent" {
+                    assert_eq!(fields.len(), 1);
+                    impl_transparent(&fields[0].ty)
+                } else {
+                    let types = pluck(fields.iter(), |f| f.ty.clone());
+                    let names = pluck(fields.iter(), |f| {
+                        find_hdf5_rename(&f.attrs)
+                            .unwrap_or_else(|| f.ident.as_ref().unwrap().to_string())
+                    });
+                    let fields = pluck(fields.iter(), |f| f.ident.clone().unwrap());
+                    impl_compound(ty, ty_generics, &fields, &names, &types)
+                }
             }
             Fields::Unnamed(ref fields) => {
                 let (index, fields): (Vec<Index>, Vec<_>) = fields
@@ -164,31 +205,52 @@ fn impl_trait(
                     .map(|(i, f)| (Index::from(i), f))
                     .unzip();
                 if fields.is_empty() {
-                    panic!("Cannot derive H5Type for empty tuple structs");
+                    abort!(ty, "cannot derive `H5Type` for empty tuple structs")
                 }
-                find_repr(attrs, &["C"]).expect("H5Type requires #[repr(C)] for structs");
-                let names = (0..fields.len()).map(|f| f.to_string()).collect::<Vec<_>>();
-                let types = pluck(fields.iter(), |f| f.ty.clone());
-                impl_compound(ty, ty_generics, &index, &names, &types)
+
+                let repr =  find_repr(attrs, &["C", "packed", "transparent"]).unwrap_or_else(|| {
+                        abort!(ty,
+                    "`H5Type` requires repr(C), repr(packed) or repr(transparent) for tuple structs")
+                    });
+                if repr == "transparent" {
+                    assert_eq!(fields.len(), 1);
+                    impl_transparent(&fields[0].ty)
+                } else {
+                    let names = fields
+                        .iter()
+                        .enumerate()
+                        .map(|(n, f)| find_hdf5_rename(&f.attrs).unwrap_or_else(|| n.to_string()))
+                        .collect::<Vec<_>>();
+                    let types = pluck(fields.iter(), |f| f.ty.clone());
+                    impl_compound(ty, ty_generics, &index, &names, &types)
+                }
             }
         },
         Data::Enum(ref data) => {
             let variants = &data.variants;
+
             if variants.iter().any(|v| v.fields != Fields::Unit || v.discriminant.is_none()) {
-                panic!("H5Type can only be derived for enums with scalar discriminants");
-            } else if variants.is_empty() {
-                panic!("Cannot derive H5Type for empty enums")
+                abort!(ty, "`H5Type` can only be derived for enums with scalar discriminants")
             }
+
+            if variants.is_empty() {
+                abort!(ty, "cannot derive `H5Type` for empty enums")
+            }
+
             let enum_reprs =
                 &["i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "isize", "usize"];
-            let repr = find_repr(attrs, enum_reprs)
-                .expect("H5Type can only be derived for enums with explicit representation");
-            let names = pluck(variants.iter(), |v| v.ident.clone());
+            let repr = find_repr(attrs, enum_reprs).unwrap_or_else(|| {
+                abort!(ty, "`H5Type` can only be derived for enums with explicit representation")
+            });
+            let names = variants
+                .iter()
+                .map(|v| find_hdf5_rename(&v.attrs).unwrap_or_else(|| v.ident.to_string()))
+                .collect::<Vec<_>>();
             let values = pluck(variants.iter(), |v| v.discriminant.clone().unwrap().1);
-            impl_enum(names, values, &repr)
+            impl_enum(&names, &values, &repr)
         }
         Data::Union(_) => {
-            panic!("Cannot derive H5Type for tagged unions");
+            abort!(ty, "cannot derive `H5Type` for tagged unions");
         }
     }
 }

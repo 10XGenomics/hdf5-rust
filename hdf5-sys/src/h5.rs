@@ -8,17 +8,26 @@ use crate::internal_prelude::*;
 
 pub type herr_t = c_int;
 pub type htri_t = c_int;
-pub type hsize_t = c_ulonglong;
-pub type hssize_t = c_longlong;
-pub type haddr_t = uint64_t;
 
-#[cfg(all(feature = "1.10.0", have_stdbool_h))]
+#[cfg(not(feature = "1.13.0"))]
+pub type hsize_t = c_ulonglong;
+#[cfg(feature = "1.13.0")]
+pub type hsize_t = u64;
+
+#[cfg(not(feature = "1.13.0"))]
+pub type hssize_t = c_longlong;
+#[cfg(feature = "1.13.0")]
+pub type hssize_t = i64;
+
+pub type haddr_t = u64;
+
+#[cfg(any(all(feature = "1.10.0", have_stdbool_h), feature = "1.13.0"))]
 pub type hbool_t = u8;
-#[cfg(any(not(feature = "1.10.0"), not(have_stdbool_h)))]
+#[cfg(not(any(all(feature = "1.10.0", have_stdbool_h), feature = "1.13.0")))]
 pub type hbool_t = c_uint;
 
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
 pub enum H5_iter_order_t {
     H5_ITER_UNKNOWN = -1,
     H5_ITER_INC = 0,
@@ -28,7 +37,7 @@ pub enum H5_iter_order_t {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
 pub enum H5_index_t {
     H5_INDEX_UNKNOWN = -1,
     H5_INDEX_NAME = 0,
@@ -105,4 +114,13 @@ extern "C" {
     pub fn H5get_free_list_sizes(
         reg_size: *mut size_t, arr_size: *mut size_t, blk_size: *mut size_t, fac_size: *mut size_t,
     ) -> herr_t;
+}
+
+#[cfg(feature = "1.13.0")]
+type H5_atclose_func_t = Option<extern "C" fn(ctx: *mut c_void)>;
+
+#[cfg(feature = "1.13.0")]
+extern "C" {
+    pub fn H5atclose(func: H5_atclose_func_t, ctx: *mut c_void) -> herr_t;
+    pub fn H5is_library_terminating(is_terminating: *mut hbool_t) -> herr_t;
 }

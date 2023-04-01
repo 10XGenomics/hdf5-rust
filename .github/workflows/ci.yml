@@ -41,7 +41,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: ${{matrix.command}}
-          args: "${{matrix.command == 'fmt' && '--all -- --check' || '-- -D warnings'}}"
+          args: "${{matrix.command == 'fmt' && '--all -- --check' || '--workspace --exclude hdf5-src -- -D warnings -D clippy::cargo'}}"
 
   doc: # This task should mirror the procedure on docs.rs
     runs-on: ubuntu-latest
@@ -223,7 +223,7 @@ jobs:
       fail-fast: false
       matrix:
         rust: [stable]
-        version: ["1.8", "1.10", "1.12"]
+        version: ["1.8", "1.10", "1.12", "1.13"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -242,12 +242,16 @@ jobs:
             VERSION=1.10.0
             DL_PATH=windows/extra/hdf5-1.10.0-win64-VS2015-shared.zip
             echo "MSI_PATH=hdf5\\HDF5-1.10.0-win64.msi" >> $GITHUB_ENV
-          else
+          elif [[ "${{matrix.version}}" == "1.12" ]]; then
             VERSION=1.12.0
             DL_PATH=hdf5-1.12.0-Std-win10_64-vs16.zip
             echo "MSI_PATH=hdf\\HDF5-1.12.0-win64.msi" >> $GITHUB_ENV
+          else
+            VERSION=1.13.2
+            DL_PATH=windows/hdf5-1.13.2-Std-win10_64-vs16.zip
+            echo "MSI_PATH=hdf\\HDF5-1.13.2-win64.msi" >> $GITHUB_ENV
           fi
-          BASE_URL=https://support.hdfgroup.org/ftp/HDF5/prev-releases
+          BASE_URL=https://support.hdfgroup.org/ftp/HDF5/releases
           echo "DL_URL=$BASE_URL/hdf5-${{matrix.version}}/hdf5-$VERSION/bin/$DL_PATH" >> $GITHUB_ENV
           echo "C:\\Program Files\\HDF_Group\\HDF5\\$VERSION\\bin" >> $GITHUB_PATH
       - name: Install HDF5 (${{matrix.version}})
@@ -270,7 +274,7 @@ jobs:
         with: {submodules: true}
       - name: Install Rust
         uses: actions-rs/toolchain@v1
-        with: {toolchain: 1.51, profile: minimal, override: true}
+        with: {toolchain: 1.54, profile: minimal, override: true}
       - name: Build and test all crates
         run:
           cargo test --workspace -vv --features=hdf5-sys/static --exclude=hdf5-derive

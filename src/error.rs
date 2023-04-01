@@ -1,9 +1,10 @@
 use std::convert::Infallible;
 use std::error::Error as StdError;
 use std::fmt;
+use std::io;
 use std::ops::Deref;
 use std::panic;
-use std::ptr;
+use std::ptr::{self, addr_of_mut};
 
 use ndarray::ShapeError;
 
@@ -95,7 +96,7 @@ impl ErrorStack {
         }
 
         let mut data = CallbackData { stack: ExpandedErrorStack::new(), err: None };
-        let data_ptr: *mut c_void = (&mut data as *mut CallbackData).cast::<c_void>();
+        let data_ptr: *mut c_void = addr_of_mut!(data).cast::<c_void>();
 
         let stack_id = self.handle().id();
         h5lock!({
@@ -264,7 +265,13 @@ impl StdError for Error {}
 
 impl From<ShapeError> for Error {
     fn from(err: ShapeError) -> Self {
-        format!("shape error: {}", err.to_string()).into()
+        format!("shape error: {}", err).into()
+    }
+}
+
+impl From<Error> for io::Error {
+    fn from(err: Error) -> Self {
+        Self::new(io::ErrorKind::Other, err)
     }
 }
 
@@ -365,7 +372,7 @@ pub mod tests {
             "Error in H5Pclose(): can't close [Property lists: Unable to free object]"
         );
 
-        assert!(stack.len() >= 2 && stack.len() <= 3); // depending on HDF5 version
+        assert!(stack.len() >= 2 && stack.len() <= 4); // depending on HDF5 version
         assert!(!stack.is_empty());
 
         assert_eq!(stack[0].description(), "H5Pclose(): can't close");
@@ -375,12 +382,24 @@ pub mod tests {
              [Property lists: Unable to free object]"
         );
 
-        assert_eq!(stack[stack.len() - 1].description(), "H5I_dec_ref(): can't locate ID");
-        assert_eq!(
-            &stack[stack.len() - 1].detail().unwrap(),
-            "Error in H5I_dec_ref(): can't locate ID \
+        #[cfg(not(feature = "1.13.0"))]
+        {
+            assert_eq!(stack[stack.len() - 1].description(), "H5I_dec_ref(): can't locate ID");
+            assert_eq!(
+                &stack[stack.len() - 1].detail().unwrap(),
+                "Error in H5I_dec_ref(): can't locate ID \
              [Object atom: Unable to find atom information (already closed?)]"
-        );
+            );
+        }
+        #[cfg(feature = "1.13.0")]
+        {
+            assert_eq!(stack[stack.len() - 1].description(), "H5I__dec_ref(): can't locate ID");
+            assert_eq!(
+                &stack[stack.len() - 1].detail().unwrap(),
+                "Error in H5I__dec_ref(): can't locate ID \
+             [Object ID: Unable to find ID information (already closed?)]"
+            );
+        }
 
         let empty_stack = ExpandedErrorStack::new();
         assert!(empty_stack.is_empty());

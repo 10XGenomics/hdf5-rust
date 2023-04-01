@@ -11,7 +11,7 @@ use crate::internal_prelude::*;
 
 pub const H5S_ALL: hid_t = 0;
 
-pub const H5S_UNLIMITED: hsize_t = -1_i32 as _;
+pub const H5S_UNLIMITED: hsize_t = !0;
 
 pub const H5S_MAX_RANK: c_uint = 32;
 
@@ -19,7 +19,7 @@ pub const H5S_SEL_ITER_GET_SEQ_LIST_SORTED: c_uint = 0x0001;
 pub const H5S_SEL_ITER_SHARE_WITH_DATASPACE: c_uint = 0x0002;
 
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
 pub enum H5S_class_t {
     H5S_NO_CLASS = -1,
     H5S_SCALAR = 0,
@@ -28,7 +28,7 @@ pub enum H5S_class_t {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
 pub enum H5S_seloper_t {
     H5S_SELECT_NOOP = -1,
     H5S_SELECT_SET = 0,
@@ -43,7 +43,7 @@ pub enum H5S_seloper_t {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
 pub enum H5S_sel_type {
     H5S_SEL_ERROR = -1,
     H5S_SEL_NONE = 0,

@@ -190,6 +190,7 @@ link_hid!(H5E_DATATYPE, h5e::H5E_DATATYPE);
 link_hid!(H5E_RS, h5e::H5E_RS);
 link_hid!(H5E_HEAP, h5e::H5E_HEAP);
 link_hid!(H5E_OHDR, h5e::H5E_OHDR);
+#[cfg(not(feature = "1.13.0"))]
 link_hid!(H5E_ATOM, h5e::H5E_ATOM);
 link_hid!(H5E_ATTR, h5e::H5E_ATTR);
 link_hid!(H5E_NONE_MAJOR, h5e::H5E_NONE_MAJOR);
@@ -265,6 +266,7 @@ link_hid!(H5E_NOTHDF5, h5e::H5E_NOTHDF5);
 link_hid!(H5E_BADFILE, h5e::H5E_BADFILE);
 link_hid!(H5E_TRUNCATED, h5e::H5E_TRUNCATED);
 link_hid!(H5E_MOUNT, h5e::H5E_MOUNT);
+#[cfg(not(feature = "1.13.0"))]
 link_hid!(H5E_BADATOM, h5e::H5E_BADATOM);
 link_hid!(H5E_BADGROUP, h5e::H5E_BADGROUP);
 link_hid!(H5E_CANTREGISTER, h5e::H5E_CANTREGISTER);
@@ -327,18 +329,18 @@ lazy_static! {
 
 // File drivers
 lazy_static! {
-    pub static ref H5FD_CORE: hid_t = unsafe { h5lock!(H5FD_core_init()) };
-    pub static ref H5FD_SEC2: hid_t = unsafe { h5lock!(H5FD_sec2_init()) };
-    pub static ref H5FD_STDIO: hid_t = unsafe { h5lock!(H5FD_stdio_init()) };
-    pub static ref H5FD_FAMILY: hid_t = unsafe { h5lock!(H5FD_family_init()) };
-    pub static ref H5FD_LOG: hid_t = unsafe { h5lock!(H5FD_log_init()) };
-    pub static ref H5FD_MULTI: hid_t = unsafe { h5lock!(H5FD_multi_init()) };
+    pub static ref H5FD_CORE: hid_t = h5lock!(H5FD_core_init());
+    pub static ref H5FD_SEC2: hid_t = h5lock!(H5FD_sec2_init());
+    pub static ref H5FD_STDIO: hid_t = h5lock!(H5FD_stdio_init());
+    pub static ref H5FD_FAMILY: hid_t = h5lock!(H5FD_family_init());
+    pub static ref H5FD_LOG: hid_t = h5lock!(H5FD_log_init());
+    pub static ref H5FD_MULTI: hid_t = h5lock!(H5FD_multi_init());
 }
 
 // MPI-IO file driver
 #[cfg(feature = "have-parallel")]
 lazy_static! {
-    pub static ref H5FD_MPIO: hid_t = unsafe { h5lock!(H5FD_mpio_init()) };
+    pub static ref H5FD_MPIO: hid_t = h5lock!(H5FD_mpio_init());
 }
 #[cfg(not(feature = "have-parallel"))]
 lazy_static! {
@@ -348,7 +350,7 @@ lazy_static! {
 // Direct VFD
 #[cfg(feature = "have-direct")]
 lazy_static! {
-    pub static ref H5FD_DIRECT: hid_t = unsafe { h5lock!(H5FD_direct_init()) };
+    pub static ref H5FD_DIRECT: hid_t = h5lock!(H5FD_direct_init());
 }
 #[cfg(not(feature = "have-direct"))]
 lazy_static! {

@@ -24,6 +24,7 @@ unsafe fn get_points_selection(space_id: hid_t) -> Result<Array2<Ix>> {
     let mut coords = vec![0; npoints * ndim];
     h5check(H5Sget_select_elem_pointlist(space_id, 0, npoints as _, coords.as_mut_ptr()))?;
     let coords = if mem::size_of::<hsize_t>() == mem::size_of::<Ix>() {
+        #[allow(clippy::transmute_undefined_repr)]
         mem::transmute(coords)
     } else {
         coords.iter().map(|&x| x as _).collect()
@@ -408,7 +409,7 @@ impl TryFrom<ndarray::Slice> for SliceOrIndex {
         let ndarray::Slice { start, end, step } = slice;
         let start = start.try_into()?;
         let step = step.try_into()?;
-        let end = end.map(|end| end.try_into());
+        let end = end.map(TryInto::try_into);
         match end {
             Some(Ok(end)) => Ok(Self::SliceTo { start, end, step, block: 1 }),
             None => Ok(Self::Unlimited { start, step, block: 1 }),
@@ -845,8 +846,10 @@ impl Selection {
     pub fn out_ndim(&self) -> Option<usize> {
         match self {
             Self::All => None,
-            Self::Points(ref points) => Some((points.shape() != [0, 0]) as usize),
-            Self::Hyperslab(ref hyper) => Some(hyper.iter().map(|&s| s.is_slice() as usize).sum()),
+            Self::Points(ref points) => Some(usize::from(points.shape() != [0, 0])),
+            Self::Hyperslab(ref hyper) => {
+                Some(hyper.iter().map(|&s| usize::from(s.is_slice())).sum())
+            }
         }
     }
 
@@ -946,7 +949,7 @@ impl From<Hyperslab> for Selection {
 impl TryFrom<ndarray::Slice> for Selection {
     type Error = Error;
     fn try_from(slice: ndarray::Slice) -> Result<Self, Self::Error> {
-        Hyperslab::try_from(slice).map(|x| x.into())
+        Hyperslab::try_from(slice).map(Into::into)
     }
 }
 

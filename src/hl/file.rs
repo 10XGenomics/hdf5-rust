@@ -50,7 +50,7 @@ impl ObjectClass for File {
     fn short_repr(&self) -> Option<String> {
         let basename = match Path::new(&self.filename()).file_name() {
             Some(s) => s.to_string_lossy().into_owned(),
-            None => "".to_owned(),
+            None => String::new(),
         };
         let mode = if self.is_read_only() { "read-only" } else { "read/write" };
         Some(format!("\"{}\" ({})", basename, mode))
@@ -139,10 +139,10 @@ impl File {
             let count = h5call!(H5Fget_obj_count(self.id(), types)).unwrap_or(0) as size_t;
             if count > 0 {
                 let mut ids: Vec<hid_t> = Vec::with_capacity(count as _);
-                unsafe {
-                    ids.set_len(count as _);
-                }
                 if h5call!(H5Fget_obj_ids(self.id(), types, count, ids.as_mut_ptr())).is_ok() {
+                    unsafe {
+                        ids.set_len(count as _);
+                    }
                     ids.retain(|id| *id != self.id());
                     return ids;
                 }
@@ -221,7 +221,7 @@ impl FileBuilder {
     /// Opens a file in a given mode.
     pub fn open_as<P: AsRef<Path>>(&self, filename: P, mode: OpenMode) -> Result<File> {
         let filename = filename.as_ref();
-        if let OpenMode::Append = mode {
+        if mode == OpenMode::Append {
             if let Ok(file) = self.open_as(filename, OpenMode::ReadWrite) {
                 return Ok(file);
             }
@@ -362,16 +362,16 @@ pub mod tests {
     #[test]
     pub fn test_unable_to_open() {
         with_tmp_dir(|dir| {
-            assert_err!(File::open(&dir), "unable to open file");
-            assert_err!(File::open_rw(&dir), "unable to open file");
-            assert_err!(File::create_excl(&dir), "unable to create file");
-            assert_err!(File::create(&dir), "unable to create file");
-            assert_err!(File::append(&dir), "unable to create file");
+            assert_err_re!(File::open(&dir), "unable to (?:synchronously )?open file");
+            assert_err_re!(File::open_rw(&dir), "unable to (?:synchronously )?open file");
+            assert_err_re!(File::create_excl(&dir), "unable to (?:synchronously )?create file");
+            assert_err_re!(File::create(&dir), "unable to (?:synchronously )?create file");
+            assert_err_re!(File::append(&dir), "unable to (?:synchronously )?create file");
         });
         with_tmp_path(|path| {
             fs::File::create(&path).unwrap().write_all(b"foo").unwrap();
             assert!(fs::metadata(&path).is_ok());
-            assert_err!(File::open(&path), "unable to open file");
+            assert_err_re!(File::open(&path), "unable to (?:synchronously )?open file");
         })
     }
 
@@ -379,7 +379,10 @@ pub mod tests {
     pub fn test_file_create() {
         with_tmp_path(|path| {
             File::create(&path).unwrap().create_group("foo").unwrap();
-            assert_err!(File::create(&path).unwrap().group("foo"), "unable to open group");
+            assert_err_re!(
+                File::create(&path).unwrap().group("foo"),
+                "unable to (?:synchronously )?open group"
+            );
         });
     }
 
@@ -387,7 +390,7 @@ pub mod tests {
     pub fn test_file_create_excl() {
         with_tmp_path(|path| {
             File::create_excl(&path).unwrap();
-            assert_err!(File::create_excl(&path), "unable to create file");
+            assert_err_re!(File::create_excl(&path), "unable to (?:synchronously )?create file");
         });
     }
 
@@ -405,9 +408,9 @@ pub mod tests {
             File::create(&path).unwrap().create_group("foo").unwrap();
             let file = File::open(&path).unwrap();
             file.group("foo").unwrap();
-            assert_err!(
+            assert_err_re!(
                 file.create_group("bar"),
-                "unable to create group: no write intent on file"
+                "unable to (?:synchronously )?create group: no write intent on file"
             );
             assert_err!(File::open("/foo/bar/baz"), "unable to open file");
         });
