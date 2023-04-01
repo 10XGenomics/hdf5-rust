@@ -136,7 +136,6 @@ jobs:
         run: cargo test --workspace -v --features hdf5-sys/static,hdf5-sys/zlib --exclude hdf5-derive
 
   conda_dl:
-    name: static
     runs-on: ${{matrix.os}}-latest
     strategy:
       fail-fast: false
@@ -148,7 +147,7 @@ jobs:
           - {os: macos, rust: stable}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with: {submodules: true}
       - name: Change to older toolchain
         if: matrix.os == 'macos'
