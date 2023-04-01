@@ -16,6 +16,8 @@ categories = ["science", "filesystem"]
 [features]
 default = []
 mpio = ["mpi-sys", "hdf5-sys/mpio"]
+lzf = ["lzf-sys", "errno"]
+blosc = ["blosc-sys"]
 conda = ["hdf5-sys/conda"] 
 
 [workspace]
