@@ -154,6 +154,31 @@ jobs:
           cargo r --example chunking --features hdf5-sys/static,hdf5-sys/zlib,lzf,blosc
         if: matrix.rust != 'stable-gnu'
 
+  conda_dl:
+    name: static
+    runs-on: ${{matrix.os}}-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu, rust: stable}
+          - {os: windows, rust: stable-msvc}
+          - {os: windows, rust: stable-gnu}
+          - {os: macos, rust: stable}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+        with: {submodules: true}
+      - name: Change to older toolchain
+        if: matrix.os == 'macos'
+        run: sudo xcode-select -s "/Applications/Xcode_11.7.app"
+      - name: Install Rust (${{matrix.rust}})
+        uses: actions-rs/toolchain@v1
+        with: {toolchain: '${{matrix.rust}}', profile: minimal, override: true}
+      - name: Build and test all crates
+        run: cargo test --workspace -v --features conda --exclude hdf5-derive
+
+
   apt:
     name: apt
     runs-on: ubuntu-${{matrix.ubuntu}}

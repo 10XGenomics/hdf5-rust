@@ -637,6 +637,14 @@ impl Config {
 }
 
 fn main() {
+    #[cfg(feature = "conda")]
+    if env::var("CARGO_FEATURE_CONDA").is_ok() {
+        println!("cargo:rerun-if-changed=build.rs");
+        println!("cargo:rerun-if-env-changed=CARGO_FEATURE_CONDA");
+        conda_dl::conda_static();
+        return;
+    }
+
     if feature_enabled("STATIC") && std::env::var_os("HDF5_DIR").is_none() {
         get_build_and_emit();
     } else {
@@ -679,4 +687,174 @@ fn get_build_and_emit() {
     let header = Header::parse(&hdf5_incdir);
     let config = Config { header, inc_dir: "".into(), link_paths: Vec::new() };
     config.emit_cfg_flags();
+}
+
+/// Download HDF5 binary builds from Conda and statically link to them.
+#[cfg(feature = "conda")]
+mod conda_dl {
+    use super::*;
+
+    use std::io::{self, Read};
+    use std::path::PathBuf;
+    use std::time::Duration;
+
+    use bzip2::read::BzDecoder;
+    use sha2::Digest;
+    use tar::Archive;
+
+    #[cfg(target_os = "linux")]
+    mod conda {
+        pub const INC_PATH: &'static str = "include";
+        pub const LIB_PATH: &'static str = "lib";
+
+        pub const DLS: &[(&'static str, &'static str, &'static str)] = &[
+            (
+                "hdf5-1.12.0-hc3cf35f_0.tar.bz2",
+                "https://anaconda.org/anaconda/hdf5/1.12.0/download/linux-64/hdf5-1.12.0-hc3cf35f_0.tar.bz2",
+                "1681beaec0bcbd0025731735902744ef4db6a3084d9d325d814ec9758a2da31c",
+            ),
+            (
+                "zlib-1.2.11-hfbfcf68_1.tar.bz2",
+                "https://repo.continuum.io/pkgs/main/linux-64/zlib-1.2.11-hfbfcf68_1.tar.bz2",
+                "97c9bd774d08dcc6383c297e4378e1486061e7af426f3e62fda449454de7defb",
+            ),
+        ];
+    }
+
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    mod conda {
+        pub const INC_PATH: &'static str = "include";
+        pub const LIB_PATH: &'static str = "lib";
+
+        pub const DLS: &[(&'static str, &'static str, &'static str)] = &[
+            (
+                "hdf5-1.12.0-h964e04d_0.tar.bz2",
+                "https://anaconda.org/anaconda/hdf5/1.12.0/download/osx-64/hdf5-1.12.0-h964e04d_0.tar.bz2",
+                "1d6e4058ab8ad0ea70dd755b62310a956f9a026ab6a3336ff4bd605c806d7c60",
+            ),
+            (
+                "zlib-1.2.11-hf3cbc9b_2.tar.bz2",
+                "https://repo.continuum.io/pkgs/main/osx-64/zlib-1.2.11-hf3cbc9b_2.tar.bz2",
+                "a82e1e2900b095f50ab7b126f31a6fe5caab0f1cb31a7bba45451df47aba0dd6",
+            ),
+        ];
+    }
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    mod conda {
+        pub const INC_PATH: &'static str = "include";
+        pub const LIB_PATH: &'static str = "lib";
+
+        pub const DLS: &[(&'static str, &'static str, &'static str)] = &[
+            (
+                "hdf5-1.12.1-nompi_had0e5e0_101.tar.bz2",
+                "https://anaconda.org/conda-forge/hdf5/1.12.1/download/osx-arm64/hdf5-1.12.1-nompi_had0e5e0_101.tar.bz2",
+                "479a943c508ea796b708d4eaaa6bf03b5168c877a454190d67a75f28a44a2461",
+            ),
+            (
+                "zlib-1.2.11-hee7b306_1013.tar.bz2",
+                "https://anaconda.org/conda-forge/zlib/1.2.11/download/osx-arm64/zlib-1.2.11-hee7b306_1013.tar.bz2",
+                "04cbcc43aaf9b1ba31eddb0a93adb1a025156542fd4ba2b7b66b4ba4f4126d50",
+            ),
+        ];
+    }
+
+    #[cfg(target_os = "windows")]
+    mod conda {
+        pub const INC_PATH: &'static str = "Library\\include";
+        pub const LIB_PATH: &'static str = "Library\\lib";
+
+        pub const DLS: &[(&'static str, &'static str, &'static str)] = &[
+            (
+                "hdf5-1.12.0-h1756f20_0.tar.bz2",
+                "https://anaconda.org/anaconda/hdf5/1.12.0/download/win-64/hdf5-1.12.0-h1756f20_0.tar.bz2",
+                "747997999fc56b5c878cc8ee224b486266ac1c77ddf8407529a91eb851abf3d7",
+            ),
+            (
+                "zlib-1.2.11-vc14h1cdd9ab_1.tar.bz2",
+                "https://repo.continuum.io/pkgs/main/win-64/zlib-1.2.11-vc14h1cdd9ab_1.tar.bz2",
+                "cf7f895c0ff7f238ed02182a89864386bfc198674dc280002ff4a47ae0993b0e",
+            ),
+        ];
+    }
+
+    fn download(uri: &str, filename: &str, out_dir: &Path) {
+        let out = PathBuf::from(out_dir.join(filename));
+
+        // Download the tarball.
+        let f = fs::File::create(&out).unwrap();
+        let writer = io::BufWriter::new(f);
+
+        let req = attohttpc::get(uri).read_timeout(Duration::new(90, 0));
+
+        let response = req.send().unwrap();
+
+        if !response.is_success() {
+            panic!("Unexpected response code {:?} for {}", response.status(), uri);
+        }
+
+        response.write_to(writer).unwrap();
+    }
+
+    fn calc_sha256(path: &Path) -> String {
+        let mut f = io::BufReader::new(fs::File::open(path).unwrap());
+        let mut buf = Vec::new();
+        f.read_to_end(&mut buf).unwrap();
+
+        let digest = sha2::Sha256::digest(&buf);
+        format!("{:x}", digest)
+    }
+
+    fn extract<P: AsRef<Path>, P2: AsRef<Path>>(archive_path: P, extract_to: P2) {
+        let file = fs::File::open(archive_path).unwrap();
+        let unzipped = BzDecoder::new(file);
+        let mut a = Archive::new(unzipped);
+        a.unpack(extract_to).unwrap();
+    }
+
+    pub fn conda_static() {
+        let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+
+        for (archive, uri, sha256) in conda::DLS {
+            let archive_path = out_dir.join(archive);
+            if archive_path.exists() && calc_sha256(&archive_path) == *sha256 {
+                println!("Use existings archive");
+            } else {
+                println!("Download archive");
+                download(uri, archive, &out_dir);
+                extract(&archive_path, &out_dir);
+
+                let sum = calc_sha256(&archive_path);
+                if sum != *sha256 {
+                    panic!(
+                        "check sum of downloaded archive {} is incorrect: sha256sum={}",
+                        archive, sum
+                    );
+                }
+            }
+        }
+
+        println!("cargo:rustc-link-search={}", out_dir.join(conda::LIB_PATH).display());
+
+        #[cfg(target_os = "windows")]
+        {
+            println!("cargo:rustc-link-lib=static=zlibstatic");
+            println!("cargo:rustc-link-lib=static=libhdf5");
+        }
+
+        #[cfg(target_os = "linux")]
+        println!("cargo:rustc-link-lib=static=hdf5");
+
+        #[cfg(target_os = "macos")]
+        println!("cargo:rustc-link-lib=static=hdf5");
+
+        #[cfg(not(target_os = "windows"))]
+        println!("cargo:rustc-link-lib=static=z");
+
+        let inc_dir = out_dir.join(conda::INC_PATH);
+
+        let header = Header::parse(&inc_dir);
+        let cfg = Config { inc_dir, link_paths: Vec::new(), header };
+        cfg.emit_cfg_flags();
+    }
 }
