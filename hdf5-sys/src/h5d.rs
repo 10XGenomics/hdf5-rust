@@ -18,7 +18,7 @@ pub const H5D_CHUNK_CACHE_W0_DEFAULT: c_float = -1.0;
 
 #[cfg(not(feature = "1.10.0"))]
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
 pub enum H5D_layout_t {
     H5D_LAYOUT_ERROR = -1,
     H5D_COMPACT = 0,
@@ -29,7 +29,7 @@ pub enum H5D_layout_t {
 
 impl Default for H5D_layout_t {
     fn default() -> Self {
-        H5D_layout_t::H5D_CONTIGUOUS
+        Self::H5D_CONTIGUOUS
     }
 }
 
@@ -39,7 +39,7 @@ pub const H5D_CHUNK_BTREE: H5D_chunk_index_t = 0;
 pub const H5D_CHUNK_IDX_BTREE: H5D_chunk_index_t = H5D_CHUNK_BTREE;
 
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
 pub enum H5D_alloc_time_t {
     H5D_ALLOC_TIME_ERROR = -1,
     H5D_ALLOC_TIME_DEFAULT = 0,
@@ -50,12 +50,12 @@ pub enum H5D_alloc_time_t {
 
 impl Default for H5D_alloc_time_t {
     fn default() -> Self {
-        H5D_alloc_time_t::H5D_ALLOC_TIME_DEFAULT
+        Self::H5D_ALLOC_TIME_DEFAULT
     }
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
 pub enum H5D_space_status_t {
     H5D_SPACE_STATUS_ERROR = -1,
     H5D_SPACE_STATUS_NOT_ALLOCATED = 0,
@@ -64,7 +64,7 @@ pub enum H5D_space_status_t {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
 pub enum H5D_fill_time_t {
     H5D_FILL_TIME_ERROR = -1,
     H5D_FILL_TIME_ALLOC = 0,
@@ -74,12 +74,12 @@ pub enum H5D_fill_time_t {
 
 impl Default for H5D_fill_time_t {
     fn default() -> Self {
-        H5D_fill_time_t::H5D_FILL_TIME_IFSET
+        Self::H5D_FILL_TIME_IFSET
     }
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
 pub enum H5D_fill_value_t {
     H5D_FILL_VALUE_ERROR = -1,
     H5D_FILL_VALUE_UNDEFINED = 0,
@@ -89,12 +89,12 @@ pub enum H5D_fill_value_t {
 
 impl Default for H5D_fill_value_t {
     fn default() -> Self {
-        H5D_fill_value_t::H5D_FILL_VALUE_DEFAULT
+        Self::H5D_FILL_VALUE_DEFAULT
     }
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
 pub enum H5D_mpio_actual_chunk_opt_mode_t {
     H5D_MPIO_NO_CHUNK_OPTIMIZATION = 0,
     H5D_MPIO_LINK_CHUNK = 1,
@@ -102,7 +102,7 @@ pub enum H5D_mpio_actual_chunk_opt_mode_t {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
 pub enum H5D_mpio_actual_io_mode_t {
     H5D_MPIO_NO_COLLECTIVE = 0,
     H5D_MPIO_CHUNK_INDEPENDENT = 1,
@@ -112,7 +112,7 @@ pub enum H5D_mpio_actual_io_mode_t {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
 pub enum H5D_mpio_no_collective_cause_t {
     H5D_MPIO_COLLECTIVE = 0,
     H5D_MPIO_SET_INDEPENDENT = 1,
@@ -218,7 +218,7 @@ mod hdf5_1_10_0 {
     use super::*;
 
     #[repr(C)]
-    #[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+    #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
     pub enum H5D_layout_t {
         H5D_LAYOUT_ERROR = -1,
         H5D_COMPACT = 0,
@@ -229,7 +229,7 @@ mod hdf5_1_10_0 {
     }
 
     #[repr(C)]
-    #[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+    #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
     pub enum H5D_vds_view_t {
         H5D_VDS_ERROR = -1,
         H5D_VDS_FIRST_MISSING = 0,
@@ -238,7 +238,7 @@ mod hdf5_1_10_0 {
 
     impl Default for H5D_vds_view_t {
         fn default() -> Self {
-            H5D_vds_view_t::H5D_VDS_LAST_AVAILABLE
+            Self::H5D_VDS_LAST_AVAILABLE
         }
     }
 
@@ -285,4 +285,53 @@ extern "C" {
         size: *mut hsize_t,
     ) -> herr_t;
     pub fn H5Dget_num_chunks(dset_id: hid_t, fspace_id: hid_t, nchunks: *mut hsize_t) -> herr_t;
+}
+
+#[cfg(feature = "1.13.0")]
+pub type H5D_chunk_iter_op_t = Option<
+    extern "C" fn(
+        offset: *const hsize_t,
+        filter_mask: u32,
+        addr: haddr_t,
+        nbytes: u32,
+        op_data: *mut c_void,
+    ) -> c_int,
+>;
+
+#[cfg(feature = "1.13.0")]
+extern "C" {
+    pub fn H5Dchunk_iter(
+        dset_id: hid_t, dxpl: hid_t, cb: H5D_chunk_iter_op_t, op_data: *mut c_void,
+    ) -> herr_t;
+    pub fn H5Dclose_async(
+        app_file: *const c_char, app_func: *const c_char, app_line: c_uint, dset_id: hid_t,
+        es_id: hid_t,
+    ) -> herr_t;
+    pub fn H5Dcreate_async(
+        app_file: *const c_char, app_func: *const c_char, app_line: c_uint, loc_id: hid_t,
+        name: *const c_char, type_id: hid_t, space_id: hid_t, lcpl_id: hid_t, dcpl_id: hid_t,
+        dapl_id: hid_t, es_id: hid_t,
+    ) -> hid_t;
+    pub fn H5Dget_space_async(
+        app_file: *const c_char, app_func: *const c_char, app_line: c_uint, dset_id: hid_t,
+        es_id: hid_t,
+    ) -> hid_t;
+    pub fn H5Dopen_async(
+        app_file: *const c_char, app_func: *const c_char, app_line: c_uint, loc_id: hid_t,
+        name: *const c_char, dapl_id: hid_t, es_id: hid_t,
+    ) -> hid_t;
+    pub fn H5Dread_async(
+        app_file: *const c_char, app_func: *const c_char, app_line: c_uint, dset_id: hid_t,
+        mem_type_id: hid_t, mem_space_id: hid_t, file_space_id: hid_t, dxpl_id: hid_t,
+        buf: *mut c_void, es_id: hid_t,
+    ) -> herr_t;
+    pub fn H5Dset_extent_async(
+        app_file: *const c_char, app_func: *const c_char, app_line: c_uint, dset_id: hid_t,
+        size: *mut c_ulong, es_id: hid_t,
+    ) -> herr_t;
+    pub fn H5Dwrite_async(
+        app_file: *const c_char, app_func: *const c_char, app_line: c_uint, dset_id: hid_t,
+        mem_type_id: hid_t, mem_space_id: hid_t, file_space_id: hid_t, dxpl_id: hid_t,
+        buf: *const c_void, es_id: hid_t,
+    ) -> herr_t;
 }

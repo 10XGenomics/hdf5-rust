@@ -47,14 +47,14 @@ pub const H5F_MPIO_DEBUG_KEY: &str = "H5F_mpio_debug_key";
 pub const H5F_UNLIMITED: hsize_t = !0;
 
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
 pub enum H5F_scope_t {
     H5F_SCOPE_LOCAL = 0,
     H5F_SCOPE_GLOBAL = 1,
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
 pub enum H5F_close_degree_t {
     H5F_CLOSE_DEFAULT = 0,
     H5F_CLOSE_WEAK = 1,
@@ -64,7 +64,7 @@ pub enum H5F_close_degree_t {
 
 impl Default for H5F_close_degree_t {
     fn default() -> Self {
-        H5F_close_degree_t::H5F_CLOSE_DEFAULT
+        Self::H5F_CLOSE_DEFAULT
     }
 }
 
@@ -97,7 +97,7 @@ impl Default for H5F_info1_t__sohm {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
 pub enum H5F_mem_t {
     H5FD_MEM_NOLIST = -1,
     H5FD_MEM_DEFAULT = 0,
@@ -112,7 +112,7 @@ pub enum H5F_mem_t {
 
 #[cfg(not(feature = "1.10.2"))]
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
 pub enum H5F_libver_t {
     H5F_LIBVER_EARLIEST = 0,
     H5F_LIBVER_LATEST = 1,
@@ -120,13 +120,17 @@ pub enum H5F_libver_t {
 
 #[cfg(feature = "1.10.2")]
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
 pub enum H5F_libver_t {
     H5F_LIBVER_ERROR = -1,
     H5F_LIBVER_EARLIEST = 0,
     H5F_LIBVER_V18 = 1,
     H5F_LIBVER_V110 = 2,
-    H5F_LIBVER_NBOUNDS = 3,
+    #[cfg(feature = "1.12.0")]
+    H5F_LIBVER_V112 = 3,
+    #[cfg(feature = "1.13.0")]
+    H5F_LIBVER_V114 = 4,
+    H5F_LIBVER_NBOUNDS,
 }
 
 #[cfg(feature = "1.10.2")]
@@ -171,7 +175,10 @@ extern "C" {
     pub fn H5Fget_freespace(file_id: hid_t) -> hssize_t;
     pub fn H5Fget_filesize(file_id: hid_t, size: *mut hsize_t) -> herr_t;
     pub fn H5Fget_mdc_config(file_id: hid_t, config_ptr: *mut H5AC_cache_config_t) -> herr_t;
+    #[cfg(not(feature = "1.13.0"))]
     pub fn H5Fset_mdc_config(file_id: hid_t, config_ptr: *mut H5AC_cache_config_t) -> herr_t;
+    #[cfg(feature = "1.13.0")]
+    pub fn H5Fset_mdc_config(file_id: hid_t, config_ptr: *const H5AC_cache_config_t) -> herr_t;
     pub fn H5Fget_mdc_hit_rate(file_id: hid_t, hit_rate_ptr: *mut c_double) -> herr_t;
     pub fn H5Fget_mdc_size(
         file_id: hid_t, max_size_ptr: *mut size_t, min_clean_size_ptr: *mut size_t,
@@ -290,7 +297,7 @@ mod hdf5_1_10_0 {
         Option<unsafe extern "C" fn(object_id: hid_t, udata: *mut c_void) -> herr_t>;
 
     #[repr(C)]
-    #[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+    #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
     pub enum H5F_file_space_type_t {
         H5F_FILE_SPACE_DEFAULT = 0,
         H5F_FILE_SPACE_ALL_PERSIST = 1,
@@ -334,7 +341,7 @@ mod hdf5_1_10_1 {
     use super::*;
 
     #[repr(C)]
-    #[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
+    #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
     pub enum H5F_fspace_strategy_t {
         H5F_FSPACE_STRATEGY_FSM_AGGR = 0,
         H5F_FSPACE_STRATEGY_PAGE = 1,
@@ -370,4 +377,28 @@ pub use self::hdf5_1_10_1::*;
 extern "C" {
     pub fn H5Fget_dset_no_attrs_hint(file_id: hid_t, minimize: *mut hbool_t) -> herr_t;
     pub fn H5Fset_dset_no_attrs_hint(file_id: hid_t, minimize: hbool_t) -> herr_t;
+}
+
+#[cfg(feature = "1.13.0")]
+extern "C" {
+    pub fn H5Fclose_async(
+        app_file: *const c_char, app_func: *const c_char, app_line: c_uint, file_id: hid_t,
+        es_id: hid_t,
+    ) -> herr_t;
+    pub fn H5Fcreate_async(
+        app_file: *const c_char, app_func: *const c_char, app_line: c_uint,
+        filename: *const c_char, flags: c_uint, fcpl_id: hid_t, fapl_id: hid_t, es_id: hid_t,
+    ) -> hid_t;
+    pub fn H5Fflush_async(
+        app_file: *const c_char, app_func: *const c_char, app_line: c_uint, object_id: hid_t,
+        scope: H5F_scope_t, es_id: hid_t,
+    ) -> herr_t;
+    pub fn H5Fopen_async(
+        app_file: *const c_char, app_func: *const c_char, app_line: c_uint,
+        filename: *const c_char, flags: c_uint, access_plit: hid_t, es_id: hid_t,
+    ) -> hid_t;
+    pub fn H5reopen_async(
+        app_file: *const c_char, app_func: *const c_char, app_line: c_uint, file_id: hid_t,
+        es_id: hid_t,
+    ) -> hid_t;
 }

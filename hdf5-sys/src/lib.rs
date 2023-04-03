@@ -4,6 +4,8 @@
 #![cfg_attr(feature = "cargo-clippy", allow(clippy::missing_safety_doc))]
 #![cfg_attr(feature = "cargo-clippy", allow(clippy::cognitive_complexity))]
 #![cfg_attr(feature = "cargo-clippy", allow(clippy::upper_case_acronyms))]
+#![cfg_attr(feature = "cargo-clippy", allow(clippy::wildcard_imports))]
+#![cfg_attr(feature = "cargo-clippy", allow(clippy::module_name_repetitions))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 macro_rules! extern_static {
@@ -43,6 +45,9 @@ pub mod h5z;
 
 #[cfg(feature = "1.8.15")]
 pub mod h5pl;
+
+#[cfg(feature = "1.13.0")]
+pub mod h5es;
 
 #[allow(non_camel_case_types)]
 mod internal_prelude {

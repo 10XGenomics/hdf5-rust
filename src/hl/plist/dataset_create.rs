@@ -2,7 +2,7 @@
 
 use std::fmt::{self, Debug};
 use std::ops::Deref;
-use std::ptr;
+use std::ptr::{self, addr_of_mut};
 
 #[cfg(feature = "1.10.0")]
 use bitflags::bitflags;
@@ -55,10 +55,11 @@ impl ObjectClass for DatasetCreate {
     }
 
     fn validate(&self) -> Result<()> {
-        let class = self.class()?;
-        if class != PropertyListClass::DatasetCreate {
-            fail!("expected dataset creation property list, got {:?}", class);
-        }
+        ensure!(
+            self.is_class(PropertyListClass::DatasetCreate),
+            "expected dataset creation property list, got {:?}",
+            self.class()
+        );
         Ok(())
     }
 }
@@ -626,7 +627,7 @@ impl DatasetCreateBuilder {
             h5try!(H5Pset_external(id, name.as_ptr(), external.offset as _, size));
         }
         if let Some(v) = self.obj_track_times {
-            h5try!(H5Pset_obj_track_times(id, v as _));
+            h5try!(H5Pset_obj_track_times(id, hbool_t::from(v)));
         }
         if let Some(v) = self.attr_phase_change {
             h5try!(H5Pset_attr_phase_change(id, v.max_compact as _, v.min_dense as _));
@@ -753,7 +754,7 @@ impl DatasetCreate {
 
     #[doc(hidden)]
     pub fn get_chunk(&self) -> Result<Option<Vec<usize>>> {
-        if let Layout::Chunked = self.get_layout()? {
+        if self.get_layout()? == Layout::Chunked {
             let ndims = h5try!(H5Pget_chunk(self.id(), 0, ptr::null_mut()));
             let mut buf: Vec<hsize_t> = vec![0; ndims as usize];
             h5try!(H5Pget_chunk(self.id(), ndims, buf.as_mut_ptr()));
@@ -781,7 +782,7 @@ impl DatasetCreate {
     #[cfg(feature = "1.10.0")]
     #[doc(hidden)]
     pub fn get_chunk_opts(&self) -> Result<Option<ChunkOpts>> {
-        if let Layout::Chunked = self.get_layout()? {
+        if self.get_layout()? == Layout::Chunked {
             let opts = h5get!(H5Pget_chunk_opts(self.id()): c_uint)?;
             Ok(Some(ChunkOpts::from_bits_truncate(opts as _)))
         } else {
@@ -809,8 +810,8 @@ impl DatasetCreate {
                     idx as _,
                     NAME_LEN as _,
                     name.as_mut_ptr(),
-                    &mut offset as *mut _,
-                    &mut size as *mut _,
+                    addr_of_mut!(offset),
+                    addr_of_mut!(size),
                 ));
                 #[allow(clippy::absurd_extreme_comparisons)]
                 external.push(ExternalFile {

@@ -13,7 +13,7 @@ use std::fmt::{self, Debug};
 use std::iter;
 use std::mem;
 use std::ops::Deref;
-use std::ptr;
+use std::ptr::{self, addr_of, addr_of_mut};
 
 use bitflags::bitflags;
 
@@ -99,10 +99,11 @@ impl ObjectClass for FileAccess {
     }
 
     fn validate(&self) -> Result<()> {
-        let class = self.class()?;
-        if class != PropertyListClass::FileAccess {
-            fail!("expected file access property list, got {:?}", class);
-        }
+        ensure!(
+            self.is_class(PropertyListClass::FileAccess),
+            "expected file access property list, got {:?}",
+            self.class()
+        );
         Ok(())
     }
 }
@@ -544,17 +545,11 @@ impl Default for ChunkCache {
 
 impl Eq for ChunkCache {}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PageBufferSize {
     pub buf_size: usize,
     pub min_meta_perc: u32,
     pub min_raw_perc: u32,
-}
-
-impl Default for PageBufferSize {
-    fn default() -> Self {
-        Self { buf_size: 0, min_meta_perc: 0, min_raw_perc: 0 }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -708,7 +703,7 @@ impl Default for MetadataCacheConfig {
             rpt_fcn_enabled: false,
             open_trace_file: false,
             close_trace_file: false,
-            trace_file_name: "".into(),
+            trace_file_name: String::new(),
             evictions_enabled: true,
             set_initial_size: true,
             initial_size: 1 << 21,
@@ -745,12 +740,12 @@ impl From<MetadataCacheConfig> for H5AC_cache_config_t {
         string_to_fixed_bytes(&v.trace_file_name, &mut trace_file_name[..N]);
         Self {
             version: H5AC__CURR_CACHE_CONFIG_VERSION,
-            rpt_fcn_enabled: v.rpt_fcn_enabled as _,
-            open_trace_file: v.open_trace_file as _,
-            close_trace_file: v.close_trace_file as _,
+            rpt_fcn_enabled: hbool_t::from(v.rpt_fcn_enabled),
+            open_trace_file: hbool_t::from(v.open_trace_file),
+            close_trace_file: hbool_t::from(v.close_trace_file),
             trace_file_name,
-            evictions_enabled: v.evictions_enabled as _,
-            set_initial_size: v.set_initial_size as _,
+            evictions_enabled: hbool_t::from(v.evictions_enabled),
+            set_initial_size: hbool_t::from(v.set_initial_size),
             initial_size: v.initial_size as _,
             min_clean_fraction: v.min_clean_fraction as _,
             max_size: v.max_size as _,
@@ -759,7 +754,7 @@ impl From<MetadataCacheConfig> for H5AC_cache_config_t {
             incr_mode: v.incr_mode.into(),
             lower_hr_threshold: v.lower_hr_threshold as _,
             increment: v.increment as _,
-            apply_max_increment: v.apply_max_increment as _,
+            apply_max_increment: hbool_t::from(v.apply_max_increment),
             max_increment: v.max_increment as _,
             flash_incr_mode: v.flash_incr_mode.into(),
             flash_multiple: v.flash_multiple as _,
@@ -767,10 +762,10 @@ impl From<MetadataCacheConfig> for H5AC_cache_config_t {
             decr_mode: v.decr_mode.into(),
             upper_hr_threshold: v.upper_hr_threshold as _,
             decrement: v.decrement as _,
-            apply_max_decrement: v.apply_max_decrement as _,
+            apply_max_decrement: hbool_t::from(v.apply_max_decrement),
             max_decrement: v.max_decrement as _,
             epochs_before_eviction: v.epochs_before_eviction as _,
-            apply_empty_reserve: v.apply_empty_reserve as _,
+            apply_empty_reserve: hbool_t::from(v.apply_empty_reserve),
             empty_reserve: v.empty_reserve as _,
             dirty_bytes_threshold: v.dirty_bytes_threshold as _,
             metadata_write_strategy: v.metadata_write_strategy.into(),
@@ -841,8 +836,8 @@ mod cache_image_config {
         fn from(v: CacheImageConfig) -> Self {
             Self {
                 version: H5AC__CURR_CACHE_CONFIG_VERSION,
-                generate_image: v.generate_image as _,
-                save_resize_status: v.save_resize_status as _,
+                generate_image: hbool_t::from(v.generate_image),
+                save_resize_status: hbool_t::from(v.save_resize_status),
                 entry_ageout: v.entry_ageout as _,
             }
         }
@@ -863,18 +858,11 @@ mod cache_image_config {
 pub use self::cache_image_config::*;
 
 #[cfg(feature = "1.10.0")]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct CacheLogOptions {
     pub is_enabled: bool,
     pub location: String,
     pub start_on_access: bool,
-}
-
-#[cfg(feature = "1.10.0")]
-impl Default for CacheLogOptions {
-    fn default() -> Self {
-        Self { is_enabled: false, location: "".into(), start_on_access: false }
-    }
 }
 
 #[cfg(feature = "1.10.2")]
@@ -1277,11 +1265,15 @@ impl FileAccessBuilder {
     }
 
     fn set_core(&self, id: hid_t, drv: &CoreDriver) -> Result<()> {
-        h5try!(H5Pset_fapl_core(id, drv.increment as _, drv.filebacked as _));
+        h5try!(H5Pset_fapl_core(id, drv.increment as _, hbool_t::from(drv.filebacked)));
         #[cfg(feature = "1.8.13")]
         {
             if let Some(page_size) = self.write_tracking {
-                h5try!(H5Pset_core_write_tracking(id, (page_size > 0) as _, page_size.max(1) as _));
+                h5try!(H5Pset_core_write_tracking(
+                    id,
+                    hbool_t::from(page_size > 0),
+                    page_size.max(1) as _
+                ));
             }
         }
         Ok(())
@@ -1335,7 +1327,7 @@ impl FileAccessBuilder {
             memb_fapl.as_ptr(),
             memb_name.as_ptr(),
             memb_addr.as_ptr(),
-            drv.relax as _,
+            hbool_t::from(drv.relax),
         ));
 
         Ok(())
@@ -1417,7 +1409,7 @@ impl FileAccessBuilder {
             h5try!(H5Pset_fclose_degree(id, v.into()));
         }
         if let Some(v) = self.gc_references {
-            h5try!(H5Pset_gc_references(id, v as _));
+            h5try!(H5Pset_gc_references(id, c_uint::from(v)));
         }
         if let Some(v) = self.small_data_block_size {
             h5try!(H5Pset_small_data_block_size(id, v as _));
@@ -1448,10 +1440,11 @@ impl FileAccessBuilder {
                 ));
             }
             if let Some(v) = self.evict_on_close {
-                h5try!(H5Pset_evict_on_close(id, v as _));
+                h5try!(H5Pset_evict_on_close(id, hbool_t::from(v)));
             }
             if let Some(v) = self.mdc_image_config {
-                h5try!(H5Pset_mdc_image_config(id, &v.into() as *const _));
+                let v = v.into();
+                h5try!(H5Pset_mdc_image_config(id, addr_of!(v)));
             }
         }
         if let Some(v) = self.sieve_buf_size {
@@ -1466,9 +1459,9 @@ impl FileAccessBuilder {
                 let location = to_cstring(v.location.as_ref())?;
                 h5try!(H5Pset_mdc_log_options(
                     id,
-                    v.is_enabled as _,
+                    hbool_t::from(v.is_enabled),
                     location.as_ptr(),
-                    v.start_on_access as _,
+                    hbool_t::from(v.start_on_access),
                 ));
             }
         }
@@ -1482,7 +1475,8 @@ impl FileAccessBuilder {
             }
         }
         if let Some(ref v) = self.mdc_config {
-            h5try!(H5Pset_mdc_config(id, &v.clone().into() as *const _));
+            let v = v.clone().into();
+            h5try!(H5Pset_mdc_config(id, addr_of!(v)));
         }
         Ok(())
     }
@@ -1518,7 +1512,7 @@ impl FileAccess {
         let mut drv = CoreDriver::default();
         let mut increment: size_t = 0;
         let mut filebacked: hbool_t = 0;
-        h5try!(H5Pget_fapl_core(self.id(), &mut increment as *mut _, &mut filebacked as *mut _));
+        h5try!(H5Pget_fapl_core(self.id(), addr_of_mut!(increment), addr_of_mut!(filebacked)));
         drv.increment = increment as _;
         drv.filebacked = filebacked > 0;
         #[cfg(feature = "1.8.13")]
@@ -1527,8 +1521,8 @@ impl FileAccess {
             let mut page_size: size_t = 0;
             h5try!(H5Pget_core_write_tracking(
                 self.id(),
-                &mut is_enabled as *mut _,
-                &mut page_size as *mut _,
+                addr_of_mut!(is_enabled),
+                addr_of_mut!(page_size),
             ));
             if is_enabled > 0 {
                 drv.write_tracking = page_size;
@@ -1560,7 +1554,7 @@ impl FileAccess {
             memb_fapl.as_mut_ptr(),
             memb_name.as_mut_ptr(),
             memb_addr.as_mut_ptr(),
-            &mut relax as *mut _,
+            addr_of_mut!(relax),
         ));
         let mut mapping: [u8; N] = unsafe { mem::zeroed() };
         let mut layout = MultiLayout::default();
@@ -1639,7 +1633,7 @@ impl FileAccess {
 
     #[doc(hidden)]
     pub fn get_fclose_degree(&self) -> Result<FileCloseDegree> {
-        h5get!(H5Pget_fclose_degree(self.id()): H5F_close_degree_t).map(|x| x.into())
+        h5get!(H5Pget_fclose_degree(self.id()): H5F_close_degree_t).map(Into::into)
     }
 
     pub fn fclose_degree(&self) -> FileCloseDegree {
