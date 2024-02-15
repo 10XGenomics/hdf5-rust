@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - master
+      - conda_nov2021
   pull_request:
     branches:
       - master
+      - conda_nov2021
   schedule:
     - cron: '0 18 * * *'
 
