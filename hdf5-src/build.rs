@@ -1,4 +1,6 @@
+use glob::glob;
 use std::env;
+use std::path::PathBuf;
 
 fn feature_enabled(feature: &str) -> bool {
     env::var(format!("CARGO_FEATURE_{}", feature)).is_ok()
@@ -6,6 +8,50 @@ fn feature_enabled(feature: &str) -> bool {
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
+
+    let mut cfg = cc::Build::new();
+
+    for entry in glob("ext/hdf5/src/*.c").expect("Failed to read glob pattern") {
+        match entry {
+            Ok(path) => {
+                let p = path.file_name().unwrap();
+                if p != "H5detect.c" && p != "H5make_libsettings.c" && p != "adfa" {
+                    cfg.file(path);
+                }
+            }
+            Err(e) => panic!("{:?}", e),
+        }
+    }
+
+    //let mut lib_list = "".to_string();
+
+    if let Ok(z_inc) = env::var("DEP_Z_INCLUDE") {
+        cfg.include(z_inc);
+        //lib_list += " -lz";
+    }
+
+    cfg.compile("hdf5");
+
+    let dst = PathBuf::from(env::var("OUT_DIR").unwrap());
+    println!("cargo:root={}", dst.display());
+
+    //let hdf5_incdir = format!("{}/include", dst.display());
+    let hdf5_incdir = "/Users/patrick/code/hdf5-rust/hdf5-src/ext/hdf5/src";
+    println!("cargo:include={}", hdf5_incdir);
+
+    let hdf5_lib = if cfg!(target_env = "msvc") { "libhdf5" } else { "hdf5" }.to_owned();
+    println!("cargo:library={}", hdf5_lib);
+
+    if feature_enabled("ZLIB") {
+        let zlib_include_dir = env::var_os("DEP_Z_INCLUDE").unwrap();
+        let mut zlib_header = env::split_paths(&zlib_include_dir).next().unwrap();
+        zlib_header.push("zlib.h");
+        let zlib_lib = "z";
+        println!("cargo:zlib_header={}", zlib_header.to_str().unwrap());
+        println!("cargo:zlib={}", zlib_lib);
+    }
+
+    /*
     let mut cfg = cmake::Config::new("ext/hdf5");
 
     // only build the static c library, disable everything else
@@ -81,6 +127,7 @@ fn main() {
     }
 
     let dst = cfg.build();
+
     println!("cargo:root={}", dst.display());
 
     let hdf5_incdir = format!("{}/include", dst.display());
@@ -93,4 +140,5 @@ fn main() {
         }
     }
     println!("cargo:library={}", hdf5_lib);
+    */
 }

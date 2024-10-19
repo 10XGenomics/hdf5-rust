@@ -39,3 +39,5 @@ libz-sys = { workspace = true, optional = true, features = ["static", "libc"] }
 
 [build-dependencies]
 cmake = "0.1"
+cc = { version = "1.1", features = ["parallel"] }
+glob = "0.3"
