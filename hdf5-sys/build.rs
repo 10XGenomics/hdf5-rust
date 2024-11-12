@@ -733,9 +733,9 @@ mod conda_dl {
                 "1d6e4058ab8ad0ea70dd755b62310a956f9a026ab6a3336ff4bd605c806d7c60",
             ),
             (
-                "zlib-1.2.11-hf3cbc9b_2.tar.bz2",
-                "https://repo.continuum.io/pkgs/main/osx-64/zlib-1.2.11-hf3cbc9b_2.tar.bz2",
-                "a82e1e2900b095f50ab7b126f31a6fe5caab0f1cb31a7bba45451df47aba0dd6",
+                "zlib-1.2.11-h6c3fc93_1014.tar.bz2",
+                "https://anaconda.org/conda-forge/zlib/1.2.11/download/osx-64/zlib-1.2.11-h6c3fc93_1014.tar.bz2",
+                "825ad325db6febfcc5ec1051a57a50be5504613c737ef3be8ccf38ec4dd12b70",
             ),
         ];
     }
