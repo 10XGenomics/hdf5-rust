@@ -28,8 +28,8 @@ threadsafe = ["hdf5-src/threadsafe"]
 zlib = ["libz-sys", "hdf5-src/zlib"]
 static = ["hdf5-src"]
 deprecated = ["hdf5-src/deprecated"]
-conda = ["attohttpc", "sha2", "bzip2", "tar"]
-tls-rustls-webpki-roots = ["attohttpc/tls-rustls-webpki-roots", "rustls/aws_lc_rs"]
+conda = ["attohttpc", "sha2", "bzip2", "tar", "tls-rustls-webpki-roots"]
+tls-rustls-webpki-roots = ["attohttpc/tls-rustls-webpki-roots"]
 
 [build-dependencies]
 libloading = ">=0.7,<1"
