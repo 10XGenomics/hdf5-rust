@@ -641,8 +641,6 @@ fn main() {
     if env::var("CARGO_FEATURE_CONDA").is_ok() {
         println!("cargo:rerun-if-changed=build.rs");
         println!("cargo:rerun-if-env-changed=CARGO_FEATURE_CONDA");
-        #[cfg(feature = "tls-rustls-webpki-roots")]
-        rustls::crypto::aws_lc_rs::default_provider().install_default().unwrap();
         conda_dl::conda_static();
         return;
     }
