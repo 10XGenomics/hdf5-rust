@@ -29,8 +29,21 @@ fn configure_cmake_cross_run_advanced_cache_vars(cfg: &mut cmake::Config) {
     }
 }
 
+/// Remove environmnent variables that would interfere with the build.
+/// Setting `CFLAGS=-D__DATA__="redacted"` causes the build to fail.
+fn santize_environment() {
+    for var in ["CFLAGS", "CXXFLAGS"] {
+        if let Ok(cflags) = env::var(var) {
+            let filtered_cflags: Vec<&str> =
+                cflags.split(' ').filter(|x| !x.contains("\"redacted\"")).collect();
+            env::set_var(var, filtered_cflags.join(" "));
+        }
+    }
+}
+
 fn main() {
     println!("cargo::rerun-if-changed=build.rs");
+    santize_environment();
     let mut cfg = cmake::Config::new("ext/hdf5");
 
     // only build the static c library, disable everything else
