@@ -393,6 +393,14 @@ mod macos {
                 }
             }
         }
+        // Also try the unversioned "hdf5" formula (the current/latest stable)
+        if config.inc_dir.is_none() {
+            if let Some(out) = run_command("brew", &["--prefix", "hdf5"]) {
+                if is_root_dir(&out) {
+                    config.inc_dir = Some(PathBuf::from(out).join("include"));
+                }
+            }
+        }
         if let Some(ref inc_dir) = config.inc_dir {
             println!("Found Homebrew HDF5 headers at:");
             println!("    {:?}", inc_dir);
