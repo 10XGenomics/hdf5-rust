@@ -1,11 +1,170 @@
 # Changelog
 
 ## hdf5 unreleased
-## hdf5-types unreleased
 ## hdf5-derive unreleased
+## hdf5-types unreleased
 ## hdf5-sys unreleased
 ## hdf5-src unreleased
 
+## hdf5-sys 0.12.3
+Release date: Aug 29, 2026
+- Add fallback detection for brew install of hdf5
+
+## hdf5 0.14.1
+Release date: Aug 12, 2026
+- Line and file_name added to ErrorFrame
+
+## hdf5-src 0.10.4
+Release date: Aug 11, 2026
+- Build library at a consistent path on all platforms
+
+## hdf5-sys 0.11.4
+Release date: Aug 10, 2026
+- Backport support for hdf5 2.X series
+
+## hdf5-sys 0.12.2
+Release date: Aug 04, 2026
+- Add support for hdf5 2.2.0
+- Add symbols introduced in hdf5 2.2.0
+
+## hdf5-src 0.10.3
+Release date: Aug 04, 2026
+- Bundling hdf5 2.2.0
+
+## hdf5 0.14.0
+Release date: Jul 25, 2026
+- Fixed wrong f64 -> h5 datatype for big endian platforms
+- Added `read_raw_into` to read directly into a pre-allocated buffer
+- Added `MajorErrorCode` and `MinorErrorCode` for matching on HDF5 error codes
+- Added `Error::stack`, `Error::contains_major` and `Error::contains_minor`
+- Added `ErrorFrame::major_code` and `ErrorFrame::minor_code`
+- Added `ExpandedErrorStack::major_codes`, `minor_codes`, `contains_major` and `contains_minor`
+- Renamed error codes map to a single variant, `H5E_BADATOM` and `H5E_BADID` both give `BadId`
+- Fixed `append` masking the underlying error with `EEXIST` when the file exists but cannot be opened
+
+## hdf5-derive 0.10.2
+Release date: Jul 25, 2026
+- Updated syn to version 3
+
+## hdf5-sys 0.12.1
+Release date: Jul 25, 2026
+- Added missing H5E error code globals, including `H5E_VOL`, `H5E_CONTEXT` and `H5E_LOGGING`
+- Fixed version gates on `H5E_PLUGIN`, `H5E_OPENERROR` and `H5E_SETDISALLOWED`
+- Added `H5E_CANTLOCKFILE` and `H5E_CANTUNLOCKFILE` on hdf5 1.10.7 and later
+
+## hdf5 0.13.0
+Release date: Jul 02, 2026
+- Added `GroupCreate` property list and `GroupBuilder` for configurable group creation
+- Added support for setting `obj_track_times` when creating groups
+- Restrict enum conversions (breaking change, it is now an error reading incompatible enums)
+
+## hdf5 0.12.6
+Release date: Jun 25, 2026
+- Use edition 2024
+- Replace dependency paste with pastey
+
+## hdf5-types 0.11.1
+Release date: Jun 25, 2026
+- Use updated hdf5-sys
+
+## hdf5-derive 0.10.1
+Release date: Jun 25, 2026
+- Removed dependency proc-macro-error2
+
+## hdf5-sys 0.12.0
+Release date: Jun 25, 2026
+- Use edition 2024
+- Added unsafe to all C functions
+
+## hdf5 0.12.5
+Release date: Jun 04, 2026
+- Added option for setting file locking on access
+
+## hdf5 0.12.4
+Release date: Mar 23, 2026
+- Support for hdf5 2.1.0
+- MSRV has been increased to 1.85
+
+## hdf5-sys 0.11.3
+Release date: Mar 23, 2026
+- Support for hdf5 2.1.0
+
+## hdf5-src 0.10.2
+Release date: Mar 23, 2026
+- Update to hdf5 2.1.0
+
+## hdf5 v0.12.3
+Release date: Feb 10, 2026
+- Fixed compression of VarLenUnicode resulting in errors
+
+## hdf5 v0.12.2
+Release date: Feb 09, 2026
+- Fixed MPIO include
+
+## hdf5-sys v0.11.2
+Release date: Feb 09, 2026
+- Fixed name of MPIO include
+
+## hdf5-src v0.10.1
+Release date: Feb 09, 2026
+- Fixed name of cmake build option
+
+## hdf5-sys v0.11.1
+Release date: Jan 20, 2026
+- Fixed an import for windows using prebuilt hdf5 2.0.0
+
+## hdf5 v0.12.1
+Release date: Jan 20, 2026
+- No changes
+
+## hdf5 v0.12.0
+Release date: Jan 19, 2026
+- Add support for hdf5 2.0.0
+- Added support for ZFP compression filters as an optional feature
+
+## hdf5-types v0.11.0
+Release date: Jan 19, 2026
+- Add support for hdf5 2.0.0
+
+## hdf5-derive v0.10.0
+Release date: Jan 19, 2026
+- Add support for hdf5 2.0.0
+
+## hdf5-sys v0.11.0
+Release date: Jan 19, 2026
+- Add support for hdf5 2.0.0
+- Remove `H5FD_*_init` functions, these are private to hdf5-c
+
+## hdf5-src v0.10.0
+Release date: Jan 19, 2026
+- Use hdf5 2.0.0
+
+## hdf5 v0.11.0
+Release date: Nov 23, 2025
+- Fixed incorrect retrieved name of attributes
+- Added support for Single Writer Multiple Readers (SWMR) (breaking change, OpenMode has extra variant)
+- Added support for object copying between Locations
+- Improved debug printing for datatype descriptor
+
+## hdf5-types v0.10.2
+Release date: Nov 23, 2025
+- Added documentation on Typedescriptor::size
+
+## hdf5-derive v0.9.3
+Release date: Nov 23, 2025
+- Fixed derive macro when inside itself or hdf5_metno package
+
+## hdf5-src v0.9.5
+Release date: Nov 23, 2025
+- Improved support for static linking with msvc
+
+## hdf5 v0.10.2 (yanked)
+Release date: Oct 16, 2025
+- Upgraded upper bound of ndarray
+
+## hdf5-types v0.10.1
+Release date: Mar 19, 2025
+- Fixed deref of null ptr in `VarLenAscii`/`VarLenUnicode`
 
 ## hdf5 v0.10.1
 Release date: Feb 12, 2025

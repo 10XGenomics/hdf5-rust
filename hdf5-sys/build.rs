@@ -14,7 +14,7 @@ use std::process::Command;
 use regex::Regex;
 
 fn feature_enabled(feature: &str) -> bool {
-    env::var(format!("CARGO_FEATURE_{}", feature)).is_ok()
+    env::var(format!("CARGO_FEATURE_{feature}")).is_ok()
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
@@ -30,12 +30,21 @@ impl Version {
     }
 
     pub fn parse(s: &str) -> Option<Self> {
-        let re = Regex::new(r"^(1)\.(8|10|12|14)\.(\d\d?)(_|.\d+)?((-|.)(patch)?\d+)?$").ok()?;
-        let captures = re.captures(s)?;
+        let re_v2 = Regex::new(r"^2\.(\d+)\.(\d+)(?:.+)?$").expect("Invalid regex");
+        if let Some(captures) = re_v2.captures(s) {
+            return Some(Self {
+                major: 2,
+                minor: captures.get(1).and_then(|c| c.as_str().parse::<u8>().ok())?,
+                micro: captures.get(2).and_then(|c| c.as_str().parse::<u8>().ok())?,
+            });
+        };
+        let re_v1 = Regex::new(r"^1\.(8|10|12|14)\.(\d\d?)(_|.\d+)?((-|.)(patch)?\d+)?$")
+            .expect("Invalid regex");
+        let captures = re_v1.captures(s)?;
         Some(Self {
-            major: captures.get(1).and_then(|c| c.as_str().parse::<u8>().ok())?,
-            minor: captures.get(2).and_then(|c| c.as_str().parse::<u8>().ok())?,
-            micro: captures.get(3).and_then(|c| c.as_str().parse::<u8>().ok())?,
+            major: 1,
+            minor: captures.get(1).and_then(|c| c.as_str().parse::<u8>().ok())?,
+            micro: captures.get(2).and_then(|c| c.as_str().parse::<u8>().ok())?,
         })
     }
 
@@ -53,10 +62,13 @@ impl Debug for Version {
 fn known_hdf5_versions() -> Vec<Version> {
     // Keep up to date with known_hdf5_versions in hdf5
     let mut vs = Vec::new();
+    vs.extend((0..=0).map(|v| Version::new(2, 2, v))); // 2.2.[0]
+    vs.extend((0..=1).map(|v| Version::new(2, 1, v))); // 2.1.[0-1]
+    vs.extend((0..=0).map(|v| Version::new(2, 0, v))); // 2.0.[0]
     vs.extend((5..=21).map(|v| Version::new(1, 8, v))); // 1.8.[5-23]
     vs.extend((0..=8).map(|v| Version::new(1, 10, v))); // 1.10.[0-10]
     vs.extend((0..=2).map(|v| Version::new(1, 12, v))); // 1.12.[0-2]
-    vs.extend((0..=5).map(|v| Version::new(1, 14, v))); // 1.14.[0-5]
+    vs.extend((0..=6).map(|v| Version::new(1, 14, v))); // 1.14.[0-6]
     vs
 }
 
@@ -130,7 +142,7 @@ fn validate_runtime_version(config: &Config) {
             println!("Adding extra link paths (ld)...");
             for caps in re.captures_iter(&ldv) {
                 let path = &caps["path"];
-                println!("    {}", path);
+                println!("    {path}");
                 link_paths.push(path.into());
             }
         } else {
@@ -144,10 +156,10 @@ fn validate_runtime_version(config: &Config) {
                 if let Some(filename) = path.file_name() {
                     let filename = filename.to_str().unwrap_or("");
                     if path.is_file() && libfiles.contains(&filename) {
-                        println!("Attempting to load: {:?}", path);
+                        println!("Attempting to load: {path:?}");
                         match get_runtime_version_single(&path) {
                             Ok(version) => {
-                                println!("    => runtime version = {:?}", version);
+                                println!("    => runtime version = {version:?}");
                                 if version == config.header.version {
                                     println!("HDF5 library runtime version matches headers.");
                                     return;
@@ -158,7 +170,7 @@ fn validate_runtime_version(config: &Config) {
                                 );
                             }
                             Err(err) => {
-                                println!("    => {}", err);
+                                println!("    => {err}");
                             }
                         }
                     }
@@ -185,7 +197,7 @@ impl Header {
         let inc_dir = inc_dir.as_ref();
 
         let header = get_conf_header(inc_dir);
-        println!("Parsing HDF5 config from:\n    {:?}", header);
+        println!("Parsing HDF5 config from:\n    {header:?}");
 
         let contents = fs::read_to_string(header).unwrap();
         let mut hdr = Self::default();
@@ -217,7 +229,7 @@ impl Header {
                 if let Some(version) = Version::parse(value) {
                     hdr.version = version;
                 } else {
-                    panic!("Invalid H5_VERSION: {:?}", value);
+                    panic!("Invalid H5_VERSION: {value:?}");
                 }
             };
         }
@@ -251,7 +263,7 @@ pub struct LibrarySearcher {
 
 #[cfg(any(all(unix, not(target_os = "macos")), windows))]
 mod pkgconf {
-    use super::{is_inc_dir, LibrarySearcher};
+    use super::{LibrarySearcher, is_inc_dir};
 
     pub fn find_hdf5_via_pkg_config(config: &mut LibrarySearcher) {
         if config.inc_dir.is_some() {
@@ -261,7 +273,10 @@ mod pkgconf {
         // If we're going to windows-gnu we can use pkg-config, but only so long as
         // we're coming from a windows host.
         if cfg!(windows) {
-            std::env::set_var("PKG_CONFIG_ALLOW_CROSS", "1");
+            // Safety: build.rs is run single-threaded
+            unsafe {
+                std::env::set_var("PKG_CONFIG_ALLOW_CROSS", "1");
+            }
         }
 
         // Try pkg-config. Note that HDF5 only ships pkg-config metadata
@@ -274,11 +289,11 @@ mod pkgconf {
             println!("Found HDF5 pkg-config entry");
             println!("    Include paths:");
             for dir in &library.include_paths {
-                println!("    - {:?}", dir);
+                println!("    - {dir:?}");
             }
             println!("    Link paths:");
             for dir in &library.link_paths {
-                println!("    - {:?}", dir);
+                println!("    - {dir:?}");
             }
             for dir in &library.include_paths {
                 if is_inc_dir(dir) {
@@ -289,7 +304,7 @@ mod pkgconf {
             }
             if let Some(ref inc_dir) = config.inc_dir {
                 println!("Located HDF5 headers at:");
-                println!("    {:?}", inc_dir);
+                println!("    {inc_dir:?}");
             } else {
                 println!("Unable to locate HDF5 headers from pkg-config info.");
             }
@@ -302,7 +317,7 @@ mod pkgconf {
 #[cfg(all(unix, not(target_os = "macos")))]
 mod unix {
     pub use super::pkgconf::find_hdf5_via_pkg_config;
-    use super::{is_inc_dir, LibrarySearcher};
+    use super::{LibrarySearcher, is_inc_dir};
 
     pub fn find_hdf5_in_default_location(config: &mut LibrarySearcher) {
         if config.inc_dir.is_some() {
@@ -314,8 +329,8 @@ mod unix {
             ("/usr/include", "/usr/lib64"),
         ] {
             if is_inc_dir(inc_dir) {
-                println!("Found HDF5 headers at:\n    {:?}", inc_dir);
-                println!("Adding to link path:\n    {:?}", lib_dir);
+                println!("Found HDF5 headers at:\n    {inc_dir:?}");
+                println!("Adding to link path:\n    {lib_dir:?}");
                 config.inc_dir = Some(inc_dir.into());
                 config.link_paths.push(lib_dir.into());
                 break;
@@ -334,19 +349,28 @@ mod macos {
         }
         // We have to explicitly support homebrew since the HDF5 bottle isn't
         // packaged with pkg-config metadata.
-        let (v18, v110, v112, v114) = if let Some(version) = config.version {
+        let (v22, v21, v20, v18, v110, v112, v114) = if let Some(version) = config.version {
             (
+                version.major == 2 && version.minor == 2,
+                version.major == 2 && version.minor == 1,
+                version.major == 2 && version.minor == 0,
                 version.major == 1 && version.minor == 8,
                 version.major == 1 && version.minor == 10,
                 version.major == 1 && version.minor == 12,
                 version.major == 1 && version.minor == 14,
             )
         } else {
-            (false, false, false, false)
+            (false, false, false, false, false, false, false)
         };
         println!(
             "Attempting to find HDF5 via Homebrew ({})...",
-            if v18 {
+            if v22 {
+                "2.2.*"
+            } else if v21 {
+                "2.1.*"
+            } else if v20 {
+                "2.0.*"
+            } else if v18 {
                 "1.8.*"
             } else if v110 {
                 "1.10.*"
@@ -358,6 +382,27 @@ mod macos {
                 "any version"
             }
         );
+        if !(v18 || v110 || v112 || v114 || v21) {
+            if let Some(out) = run_command("brew", &["--prefix", "hdf5@2.2"]) {
+                if is_root_dir(&out) {
+                    config.inc_dir = Some(PathBuf::from(out).join("include"));
+                }
+            }
+        }
+        if !(v18 || v110 || v112 || v114 || v20) {
+            if let Some(out) = run_command("brew", &["--prefix", "hdf5@2.1"]) {
+                if is_root_dir(&out) {
+                    config.inc_dir = Some(PathBuf::from(out).join("include"));
+                }
+            }
+        }
+        if !(v18 || v110 || v112 || v114) {
+            if let Some(out) = run_command("brew", &["--prefix", "hdf5@2.0"]) {
+                if is_root_dir(&out) {
+                    config.inc_dir = Some(PathBuf::from(out).join("include"));
+                }
+            }
+        }
         if !(v18 || v110 || v112) {
             if let Some(out) = run_command("brew", &["--prefix", "hdf5@1.14"]) {
                 if is_root_dir(&out) {
@@ -393,7 +438,6 @@ mod macos {
                 }
             }
         }
-        // Also try the unversioned "hdf5" formula (the current/latest stable)
         if config.inc_dir.is_none() {
             if let Some(out) = run_command("brew", &["--prefix", "hdf5"]) {
                 if is_root_dir(&out) {
@@ -403,7 +447,7 @@ mod macos {
         }
         if let Some(ref inc_dir) = config.inc_dir {
             println!("Found Homebrew HDF5 headers at:");
-            println!("    {:?}", inc_dir);
+            println!("    {inc_dir:?}");
         }
     }
 }
@@ -418,8 +462,8 @@ mod windows {
     use serde::de::Error;
     use serde::{Deserialize, Deserializer};
     use serde_derive::Deserialize as DeriveDeserialize;
-    use winreg::enums::HKEY_LOCAL_MACHINE;
     use winreg::RegKey;
+    use winreg::enums::HKEY_LOCAL_MACHINE;
 
     impl<'de> Deserialize<'de> for Version {
         fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -470,7 +514,7 @@ mod windows {
 
     fn get_hdf5_app(version: Option<Version>) -> Option<App> {
         if let Some(version) = version {
-            println!("Searching for installed HDF5 with version {:?}...", version);
+            println!("Searching for installed HDF5 with version {version:?}...");
         } else {
             println!("Searching for installed HDF5 (any version)...")
         }
@@ -492,7 +536,7 @@ mod windows {
         }
         if apps.len() > 1 {
             println!("Selecting the latest version ({:?}):", latest.version);
-            println!("- {:?}", latest);
+            println!("- {latest:?}");
         }
         Some(latest.clone())
     }
@@ -518,7 +562,7 @@ mod windows {
             for path in env::split_paths(&var_path) {
                 if let Ok(path) = path.canonicalize() {
                     if path == bin_dir {
-                        println!("Found in PATH: {:?}", path);
+                        println!("Found in PATH: {path:?}");
                         return;
                     }
                 }
@@ -533,7 +577,7 @@ impl LibrarySearcher {
         let mut config = Self::default();
         if let Some(var) = env::var_os("HDF5_DIR") {
             println!("Setting HDF5 root from environment variable:");
-            println!("    HDF5_DIR = {:?}", var);
+            println!("    HDF5_DIR = {var:?}");
             let root = PathBuf::from(var);
 
             assert!(!root.is_relative(), "HDF5_DIR cannot be relative.");
@@ -550,7 +594,7 @@ impl LibrarySearcher {
                     let alt_inc_dir = root_dir.join("Library").join("include");
                     if !is_inc_dir(inc_dir) && is_inc_dir(&alt_inc_dir) {
                         println!("Detected MSVC conda environment, changing headers dir to:");
-                        println!("    {:?}", alt_inc_dir);
+                        println!("    {alt_inc_dir:?}");
                         config.inc_dir = Some(alt_inc_dir);
                     }
                 }
@@ -558,11 +602,11 @@ impl LibrarySearcher {
         }
         if let Ok(var) = env::var("HDF5_VERSION") {
             println!("Setting HDF5 version from environment variable:");
-            println!("    HDF5_VERSION = {:?}", var);
+            println!("    HDF5_VERSION = {var:?}");
             if let Some(v) = Version::parse(&var) {
                 config.version = Some(v);
             } else {
-                panic!("Invalid HDF5 version: {}", var);
+                panic!("Invalid HDF5 version: {var}");
             }
         }
         config
@@ -591,10 +635,10 @@ impl LibrarySearcher {
                     if self.user_provided_dir {
                         let lib_dir = format!("{}/lib", envdir.to_string_lossy());
                         println!("Custom HDF5_DIR provided; rpath can be set via:");
-                        println!("    RUSTFLAGS=\"-C link-args=-Wl,-rpath,{}\"", lib_dir);
+                        println!("    RUSTFLAGS=\"-C link-args=-Wl,-rpath,{lib_dir}\"");
                         if cfg!(target_os = "macos") {
                             println!("On some OS X installations, you may also need to set:");
-                            println!("    DYLD_FALLBACK_LIBRARY_PATH=\"{}\"", lib_dir);
+                            println!("    DYLD_FALLBACK_LIBRARY_PATH=\"{lib_dir}\"");
                         }
                     }
                 }
@@ -606,7 +650,7 @@ impl LibrarySearcher {
 
     pub fn finalize(self) -> Config {
         if let Some(ref inc_dir) = self.inc_dir {
-            assert!(is_inc_dir(inc_dir), "Invalid HDF5 headers directory: {:?}", inc_dir);
+            assert!(is_inc_dir(inc_dir), "Invalid HDF5 headers directory: {inc_dir:?}");
             let mut link_paths = self.link_paths;
             if link_paths.is_empty() {
                 if let Some(root_dir) = inc_dir.parent() {
@@ -712,7 +756,7 @@ impl Config {
         for (flag, feature, native) in [
             (!h.have_no_deprecated, "deprecated", "HDF5_ENABLE_DEPRECATED_SYMBOLS"),
             (h.have_threadsafe, "threadsafe", "HDF5_ENABLE_THREADSAFE"),
-            (h.have_filter_deflate, "zlib", "HDF5_ENABLE_Z_LIB_SUPPORT"),
+            (h.have_filter_deflate, "zlib", "HDF5_ENABLE_ZLIB_SUPPORT"),
         ] {
             if feature_enabled(&feature.to_ascii_uppercase()) {
                 assert!(
@@ -731,7 +775,7 @@ fn main() {
         let mut searcher = LibrarySearcher::new_from_env();
         searcher.try_locate_hdf5_library();
         let config = searcher.finalize();
-        println!("{:#?}", config);
+        println!("{config:#?}");
         config.emit_link_flags();
         config.emit_cfg_flags();
         write_hdf5_version(config.header.version);
@@ -743,24 +787,24 @@ fn get_build_and_emit() {
 
     if feature_enabled("ZLIB") {
         let zlib_lib = env::var("DEP_HDF5SRC_ZLIB").unwrap();
-        println!("cargo::metadata=zlib={}", &zlib_lib);
+        println!("cargo::metadata=zlib={}", zlib_lib);
     }
 
     if feature_enabled("HL") {
         let hdf5_hl_lib = env::var("DEP_HDF5SRC_HL_LIBRARY").unwrap();
-        println!("cargo::rustc-link-lib=static={}", &hdf5_hl_lib);
-        println!("cargo::metadata=hl_library={}", &hdf5_hl_lib);
+        println!("cargo::rustc-link-lib=static={}", hdf5_hl_lib);
+        println!("cargo::metadata=hl_library={}", hdf5_hl_lib);
     }
 
     let hdf5_root = env::var("DEP_HDF5SRC_ROOT").unwrap();
-    println!("cargo::metadata=root={}", &hdf5_root);
+    println!("cargo::metadata=root={}", hdf5_root);
     let hdf5_incdir = env::var("DEP_HDF5SRC_INCLUDE").unwrap();
-    println!("cargo::metadata=include={}", &hdf5_incdir);
+    println!("cargo::metadata=include={}", hdf5_incdir);
     let hdf5_lib = env::var("DEP_HDF5SRC_LIBRARY").unwrap();
-    println!("cargo::metadata=library={}", &hdf5_lib);
+    println!("cargo::metadata=library={}", hdf5_lib);
 
-    println!("cargo::rustc-link-search=native={}/lib", &hdf5_root);
-    println!("cargo::rustc-link-lib=static={}", &hdf5_lib);
+    println!("cargo::rustc-link-search=native={}/lib", hdf5_root);
+    println!("cargo::rustc-link-lib=static={}", hdf5_lib);
 
     let header = Header::parse(&hdf5_incdir);
     let config = Config { header, inc_dir: "".into(), link_paths: Vec::new() };

@@ -4,10 +4,12 @@ use std::ops::Deref;
 use std::path::Path;
 
 use hdf5_sys::h5f::{
+    H5F_ACC_DEFAULT, H5F_ACC_EXCL, H5F_ACC_RDONLY, H5F_ACC_RDWR, H5F_ACC_TRUNC, H5F_SCOPE_LOCAL,
     H5Fclose, H5Fcreate, H5Fflush, H5Fget_access_plist, H5Fget_create_plist, H5Fget_filesize,
-    H5Fget_freespace, H5Fget_intent, H5Fget_obj_count, H5Fget_obj_ids, H5Fopen, H5F_ACC_DEFAULT,
-    H5F_ACC_EXCL, H5F_ACC_RDONLY, H5F_ACC_RDWR, H5F_ACC_TRUNC, H5F_SCOPE_LOCAL,
+    H5Fget_freespace, H5Fget_intent, H5Fget_obj_count, H5Fget_obj_ids, H5Fopen,
 };
+#[cfg(feature = "1.10.0")]
+use hdf5_sys::h5f::{H5F_ACC_SWMR_READ, H5Fstart_swmr_write};
 
 use crate::hl::plist::{
     file_access::{FileAccess, FileAccessBuilder},
@@ -17,9 +19,13 @@ use crate::internal_prelude::*;
 
 /// File opening mode.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(not(feature = "1.10.0"), non_exhaustive)]
 pub enum OpenMode {
     /// Open a file as read-only, file must exist.
     Read,
+    /// Open a file as read-only in SWMR mode, file must exist.
+    #[cfg(feature = "1.10.0")]
+    ReadSWMR,
     /// Open a file as read/write, file must exist.
     ReadWrite,
     /// Create a file, truncate if exists.
@@ -178,6 +184,14 @@ impl File {
     pub fn fcpl(&self) -> Result<FileCreate> {
         self.create_plist()
     }
+
+    #[cfg(feature = "1.10.0")]
+    /// Mark this file as ready for opening as SWMR
+    pub fn start_swmr(&self) -> Result<()> {
+        let id = self.id();
+        h5call!(H5Fstart_swmr_write(id))?;
+        Ok(())
+    }
 }
 
 /// File builder allowing to customize file access/creation property lists.
@@ -222,8 +236,15 @@ impl FileBuilder {
     pub fn open_as<P: AsRef<Path>>(&self, filename: P, mode: OpenMode) -> Result<File> {
         let filename = filename.as_ref();
         if mode == OpenMode::Append {
-            if let Ok(file) = self.open_as(filename, OpenMode::ReadWrite) {
-                return Ok(file);
+            match self.open_as(filename, OpenMode::ReadWrite) {
+                Ok(file) => return Ok(file),
+                Err(err) => {
+                    // If the file exists it is unreadable (corrupt, locked, no permission), so
+                    // report that instead of falling through to create, which would give a misleading EEXIST error.
+                    if err.contains_minor(MinorErrorCode::NotHdf5) || filename.exists() {
+                        return Err(err);
+                    }
+                }
             }
         }
         let filename = to_cstring(
@@ -231,9 +252,13 @@ impl FileBuilder {
         )?;
         let flags = match mode {
             OpenMode::Read => H5F_ACC_RDONLY,
+            #[cfg(feature = "1.10.0")]
+            OpenMode::ReadSWMR => H5F_ACC_RDONLY | H5F_ACC_SWMR_READ,
             OpenMode::ReadWrite => H5F_ACC_RDWR,
             OpenMode::Create => H5F_ACC_TRUNC,
             OpenMode::CreateExcl | OpenMode::Append => H5F_ACC_EXCL,
+            #[cfg(not(feature = "1.10.0"))]
+            _ => unreachable!(),
         };
         let fname_ptr = filename.as_ptr();
         h5lock!({
@@ -242,6 +267,8 @@ impl FileBuilder {
                 OpenMode::Read | OpenMode::ReadWrite => {
                     File::from_id(h5try!(H5Fopen(fname_ptr, flags, fapl.id())))
                 }
+                #[cfg(feature = "1.10.0")]
+                OpenMode::ReadSWMR => File::from_id(h5try!(H5Fopen(fname_ptr, flags, fapl.id()))),
                 _ => {
                     let fcpl = self.fcpl.finish()?;
                     File::from_id(h5try!(H5Fcreate(fname_ptr, flags, fcpl.id(), fapl.id())))
@@ -360,16 +387,40 @@ pub mod tests {
     #[test]
     pub fn test_unable_to_open() {
         with_tmp_dir(|dir| {
-            assert_err_re!(File::open(&dir), "unable to (?:synchronously )?open file");
-            assert_err_re!(File::open_rw(&dir), "unable to (?:synchronously )?open file");
-            assert_err_re!(File::create_excl(&dir), "unable to (?:synchronously )?create file");
-            assert_err_re!(File::create(&dir), "unable to (?:synchronously )?create file");
-            assert_err_re!(File::append(&dir), "unable to (?:synchronously )?create file");
+            // Opening a directory fails, but how it fails is not portable: read-only succeeds
+            // at the OS level on unix, so HDF5 gets as far as the superblock and reports
+            // NotHdf5, while read-write fails with EISDIR first. Only the shared codes are
+            // asserted here. The message text gained "synchronously" in HDF5 1.14, the codes
+            // did not move.
+            for err in [
+                File::open(&dir).unwrap_err(),
+                File::open_rw(&dir).unwrap_err(),
+                File::append(&dir).unwrap_err(),
+            ] {
+                assert_err_re!(Err::<(), _>(err.clone()), "unable to (?:synchronously )?open file");
+                assert!(err.contains_major(MajorErrorCode::File), "{err:?}");
+                assert!(err.contains_minor(MinorErrorCode::CantOpenFile), "{err:?}");
+            }
+            // Creating over a directory cannot report the underlying EISDIR/EEXIST as a code;
+            // HDF5 only ever says CantCreate here, with errno buried in the message text.
+            for err in [File::create_excl(&dir).unwrap_err(), File::create(&dir).unwrap_err()] {
+                assert_err_re!(
+                    Err::<(), _>(err.clone()),
+                    "unable to (?:synchronously )?create file"
+                );
+                // The minor code varies by HDF5 version (CantCreate vs FileExists)
+                // The stable part is that it's a File error and not a corrupt-superblock read.
+                assert!(err.contains_major(MajorErrorCode::File), "{err:?}");
+                assert!(!err.contains_minor(MinorErrorCode::NotHdf5), "{err:?}");
+            }
         });
         with_tmp_path(|path| {
             fs::File::create(&path).unwrap().write_all(b"foo").unwrap();
             assert!(fs::metadata(&path).is_ok());
-            assert_err_re!(File::open(&path), "unable to (?:synchronously )?open file");
+            let err = File::open(&path).unwrap_err();
+            assert_err_re!(Err::<(), _>(err.clone()), "unable to (?:synchronously )?open file");
+            // The file exists but has no valid superblock
+            assert!(err.contains_minor(MinorErrorCode::NotHdf5), "{err:?}");
         })
     }
 
@@ -388,7 +439,12 @@ pub mod tests {
     pub fn test_file_create_excl() {
         with_tmp_path(|path| {
             File::create_excl(&path).unwrap();
-            assert_err_re!(File::create_excl(&path), "unable to (?:synchronously )?create file");
+            let err = File::create_excl(&path).unwrap_err();
+            assert_err_re!(Err::<(), _>(err.clone()), "unable to (?:synchronously )?create file");
+            // The specific minor code varies by HDF5 version and build, assert on what's stable
+            let minors: Vec<_> = err.stack().unwrap().minor_codes().collect();
+            assert!(err.contains_major(MajorErrorCode::File), "minors={minors:?}: {err}");
+            assert!(!err.contains_minor(MinorErrorCode::NotHdf5), "minors={minors:?}: {err}");
         });
     }
 
@@ -397,6 +453,18 @@ pub mod tests {
         with_tmp_path(|path| {
             File::append(&path).unwrap().create_group("foo").unwrap();
             File::append(&path).unwrap().group("foo").unwrap();
+        });
+    }
+
+    #[test]
+    pub fn test_append_to_corrupt_file() {
+        with_tmp_path(|path| {
+            fs::File::create(&path).unwrap().write_all(b"garbage data").unwrap();
+            // The file exists but is not HDF5, so append must report the read failure rather
+            // than a misleading "file exists" from falling through to create
+            let err = File::append(&path).unwrap_err();
+            assert!(err.contains_minor(MinorErrorCode::NotHdf5), "{err:?}");
+            assert_err_re!(Err::<(), _>(err), "unable to (?:synchronously )?open file");
         });
     }
 

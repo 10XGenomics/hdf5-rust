@@ -36,7 +36,7 @@ fn santize_environment() {
         if let Ok(cflags) = env::var(var) {
             let filtered_cflags: Vec<&str> =
                 cflags.split(' ').filter(|x| !x.contains("\"redacted\"")).collect();
-            env::set_var(var, filtered_cflags.join(" "));
+            unsafe { env::set_var(var, filtered_cflags.join(" ")) }
         }
     }
 }
@@ -45,6 +45,15 @@ fn main() {
     println!("cargo::rerun-if-changed=build.rs");
     santize_environment();
     let mut cfg = cmake::Config::new("ext/hdf5");
+
+    if cfg!(target_env = "msvc") {
+        cfg.define("CMAKE_POLICY_DEFAULT_CMP0091", "NEW");
+        if let Ok(var) = env::var("CMAKE_MSVC_RUNTIME_LIBRARY") {
+            cfg.define("CMAKE_MSVC_RUNTIME_LIBRARY", var);
+        }
+    }
+
+    cfg.define("CMAKE_INSTALL_LIBDIR", "lib");
 
     // only build the static c library, disable everything else
     cfg.define("HDF5_NO_PACKAGES", "ON");
@@ -67,7 +76,7 @@ fn main() {
     for option in &[
         "HDF5_ENABLE_DEPRECATED_SYMBOLS",
         "HDF5_ENABLE_THREADSAFE",
-        "ALLOW_UNSUPPORTED",
+        "HDF5_ALLOW_UNSUPPORTED",
         "HDF5_BUILD_HL_LIB",
         "HDF5_ENABLE_NONSTANDARD_FEATURE_FLOAT16",
         "HDF5_ENABLE_SZIP_SUPPORT",
@@ -80,7 +89,7 @@ fn main() {
         let mut zlib_header = env::split_paths(&zlib_include_dir).next().unwrap();
         zlib_header.push("zlib.h");
         let zlib_lib = "z";
-        cfg.define("HDF5_ENABLE_Z_LIB_SUPPORT", "ON")
+        cfg.define("HDF5_ENABLE_ZLIB_SUPPORT", "ON")
             .define("H5_ZLIB_HEADER", &zlib_header)
             .define("ZLIB_STATIC_LIBRARY", zlib_lib);
         println!("cargo::metadata=zlib_header={}", zlib_header.to_str().unwrap());
@@ -97,22 +106,16 @@ fn main() {
         cfg.define("HDF5_ENABLE_THREADSAFE", "ON");
         if feature_enabled("HL") {
             println!("cargo::warning=Unsupported HDF5 options: hl with threadsafe.");
-            cfg.define("ALLOW_UNSUPPORTED", "ON");
+            cfg.define("HDF5_ALLOW_UNSUPPORTED", "ON");
         }
     }
 
     let targeting_windows = env::var("CARGO_CFG_TARGET_OS").unwrap() == "windows";
-    let debug_postfix = if targeting_windows { "_D" } else { "_debug" };
 
     if feature_enabled("HL") {
         cfg.define("HDF5_BUILD_HL_LIB", "ON");
-        let mut hdf5_hl_lib =
+        let hdf5_hl_lib =
             if cfg!(target_env = "msvc") { "libhdf5_hl" } else { "hdf5_hl" }.to_owned();
-        if let Ok(opt_level) = env::var("OPT_LEVEL") {
-            if opt_level == "0" {
-                hdf5_hl_lib.push_str(debug_postfix);
-            }
-        }
         println!("cargo::metadata=hl_library={}", hdf5_hl_lib);
     }
 
@@ -130,12 +133,7 @@ fn main() {
     let hdf5_incdir = format!("{}/include", dst.display());
     println!("cargo::metadata=include={}", hdf5_incdir);
 
-    let mut hdf5_lib = if cfg!(target_env = "msvc") { "libhdf5" } else { "hdf5" }.to_owned();
-    if let Ok(opt_level) = env::var("OPT_LEVEL") {
-        if opt_level == "0" {
-            hdf5_lib.push_str(debug_postfix);
-        }
-    }
+    let hdf5_lib = if cfg!(target_env = "msvc") { "libhdf5" } else { "hdf5" }.to_owned();
 
     println!("cargo::metadata=library={}", hdf5_lib);
 }

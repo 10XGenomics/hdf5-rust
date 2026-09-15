@@ -2,6 +2,8 @@ use std::fmt::{self, Debug};
 use std::ops::Deref;
 use std::ptr::addr_of_mut;
 
+use hdf5_sys::h5a::H5Aget_name;
+use hdf5_sys::h5p::H5Pcreate;
 use hdf5_sys::{
     h5::{H5_index_t, H5_iter_order_t},
     h5a::{H5A_info_t, H5A_operator2_t, H5Acreate2, H5Adelete, H5Aiterate2},
@@ -9,6 +11,7 @@ use hdf5_sys::{
 use hdf5_types::TypeDescriptor;
 use ndarray::ArrayView;
 
+use crate::globals::H5P_ATTRIBUTE_CREATE;
 use crate::internal_prelude::*;
 
 /// Represents the HDF5 attribute object.
@@ -46,6 +49,14 @@ impl Deref for Attribute {
 }
 
 impl Attribute {
+    /// Returns the name of the attribute.
+    pub fn name(&self) -> String {
+        // Note: We must use H5Aget_name() here. H5Iget_name() (called by
+        // Location::name()) would return the name of the object this
+        // attribute is attached to, not the attribute's own name.
+        h5lock!(get_h5_str(|m, s| H5Aget_name(self.id(), s, m)).unwrap_or_else(|_| String::new()))
+    }
+
     /// Returns names of all the members in the group, non-recursively.
     pub fn attr_names(obj: &Location) -> Result<Vec<String>> {
         unsafe extern "C" fn attributes_callback(
@@ -86,18 +97,22 @@ pub struct AttributeBuilder {
 }
 
 impl AttributeBuilder {
+    /// Creates a builder for a new attribute on a named object.
     pub fn new(parent: &Location) -> Self {
         Self { builder: AttributeBuilderInner::new(parent) }
     }
 
+    /// Sets the attribute's type without initializing its data.
     pub fn empty<T: H5Type>(self) -> AttributeBuilderEmpty {
         self.empty_as(&T::type_descriptor())
     }
 
+    /// Sets the attribute's type from a type descriptor without initializing its data.
     pub fn empty_as(self, type_desc: &TypeDescriptor) -> AttributeBuilderEmpty {
         AttributeBuilderEmpty { builder: self.builder, type_desc: type_desc.clone() }
     }
 
+    /// Sets the data to store in the attribute.
     pub fn with_data<'d, A, T, D>(self, data: A) -> AttributeBuilderData<'d, T, D>
     where
         A: Into<ArrayView<'d, T, D>>,
@@ -107,6 +122,7 @@ impl AttributeBuilder {
         self.with_data_as::<A, T, D>(data, &T::type_descriptor())
     }
 
+    /// Sets the data to store in the attribute and sets its element type with a type descriptor.
     pub fn with_data_as<'d, A, T, D>(
         self, data: A, type_desc: &TypeDescriptor,
     ) -> AttributeBuilderData<'d, T, D>
@@ -139,6 +155,7 @@ pub struct AttributeBuilderEmpty {
 }
 
 impl AttributeBuilderEmpty {
+    /// Sets the shape of the attribute's data.
     pub fn shape<S: Into<Extents>>(self, extents: S) -> AttributeBuilderEmptyShape {
         AttributeBuilderEmptyShape {
             builder: self.builder,
@@ -146,6 +163,8 @@ impl AttributeBuilderEmpty {
             extents: extents.into(),
         }
     }
+
+    /// Creates the attribute.
     pub fn create<'n, T: Into<&'n str>>(self, name: T) -> Result<Attribute> {
         self.shape(()).create(name)
     }
@@ -167,6 +186,7 @@ pub struct AttributeBuilderEmptyShape {
 }
 
 impl AttributeBuilderEmptyShape {
+    /// Creates the attribute.
     pub fn create<'n, T: Into<&'n str>>(&self, name: T) -> Result<Attribute> {
         h5lock!(self.builder.create(&self.type_desc, name.into(), &self.extents))
     }
@@ -205,6 +225,7 @@ where
         self
     }
 
+    /// Creates the attribute.
     pub fn create<'n, N: Into<&'n str>>(&self, name: N) -> Result<Attribute> {
         ensure!(
             self.data.is_standard_layout(),
@@ -262,15 +283,22 @@ impl AttributeBuilderInner {
 
         let dataspace = Dataspace::try_new(extents)?;
 
+        let acpl = PropertyList::from_id(h5call!(H5Pcreate(*H5P_ATTRIBUTE_CREATE))?)?;
+        // Set UTF-8 encoding for the attribute name, as Rust strings are UTF-8.
+        h5call!(hdf5_sys::h5p::H5Pset_char_encoding(
+            acpl.id(),
+            hdf5_sys::h5t::H5T_cset_t::H5T_CSET_UTF8
+        ))?;
+
         let name = to_cstring(name)?;
         Attribute::from_id(h5try!(H5Acreate2(
             parent.id(),
             name.as_ptr(),
             datatype.id(),
             dataspace.id(),
-            // these args are currently unused as if HDF5 1.12
-            // see details: https://portal.hdfgroup.org/display/HDF5/H5A_CREATE2
-            H5P_DEFAULT,
+            acpl.id(),
+            // Unused as of v1.14
+            // see more: https://hdfgroup.github.io/hdf5/v1_14/group___h5_a.html#ga4f4e5248c09f689633079ed8afc0b308
             H5P_DEFAULT,
         )))
     }
@@ -286,7 +314,7 @@ impl AttributeBuilderInner {
 #[cfg(test)]
 pub mod attribute_tests {
     use crate::internal_prelude::*;
-    use ndarray::{arr2, Array2};
+    use ndarray::{Array2, arr2};
     use std::str::FromStr;
     use types::VarLenUnicode;
 
@@ -298,12 +326,14 @@ pub mod attribute_tests {
             assert_eq!(d.size(), 6);
             assert_eq!(d.ndim(), 2);
             assert_eq!(d.is_scalar(), false);
+            assert_eq!(d.name(), "name1");
 
             let d = file.new_attr::<u8>().shape(()).create("name2").unwrap();
             assert_eq!(d.shape(), vec![]);
             assert_eq!(d.size(), 1);
             assert_eq!(d.ndim(), 0);
             assert_eq!(d.is_scalar(), true);
+            assert_eq!(d.name(), "name2");
         })
     }
 
@@ -314,9 +344,7 @@ pub mod attribute_tests {
             let _ = file.new_attr::<u8>().shape(()).create("name2").unwrap();
 
             let attr_names = file.attr_names().unwrap();
-            assert_eq!(attr_names.len(), 2);
-            assert!(attr_names.contains(&"name1".to_string()));
-            assert!(attr_names.contains(&"name2".to_string()));
+            assert_eq!(attr_names, vec!["name1".to_owned(), "name2".to_owned()]);
         })
     }
 
@@ -329,9 +357,7 @@ pub mod attribute_tests {
             let _ = ds.new_attr::<u8>().shape(()).create("name2").unwrap();
 
             let attr_names = ds.attr_names().unwrap();
-            assert_eq!(attr_names.len(), 2);
-            assert!(attr_names.contains(&"name1".to_string()));
-            assert!(attr_names.contains(&"name2".to_string()));
+            assert_eq!(attr_names, vec!["name1".to_owned(), "name2".to_owned()]);
         })
     }
 
@@ -368,9 +394,7 @@ pub mod attribute_tests {
             let attr = file.new_attr::<u32>().shape((1, 2)).create("foo").unwrap();
             assert!(attr.is_valid());
             assert_eq!(attr.shape(), vec![1, 2]);
-            // FIXME - attr.name() returns "/" here, which is the name the attribute is connected to,
-            // not the name of the attribute.
-            //assert_eq!(attr.name(), "foo");
+            assert_eq!(attr.name(), "foo");
             assert_eq!(file.attr("foo").unwrap().shape(), vec![1, 2]);
         })
     }
@@ -383,9 +407,7 @@ pub mod attribute_tests {
             let attr = file.new_attr_builder().with_data(&arr).create("foo").unwrap();
             assert!(attr.is_valid());
             assert_eq!(attr.shape(), vec![2, 3]);
-            // FIXME - attr.name() returns "/" here, which is the name the attribute is connected to,
-            // not the name of the attribute.
-            //assert_eq!(attr.name(), "foo");
+            assert_eq!(attr.name(), "foo");
             assert_eq!(file.attr("foo").unwrap().shape(), vec![2, 3]);
 
             let read_attr = file.attr("foo").unwrap();

@@ -5,12 +5,12 @@ use std::ops::Deref;
 use std::ptr::{addr_of, addr_of_mut};
 
 use hdf5_sys::h5t::{
-    H5T_cdata_t, H5T_class_t, H5T_cset_t, H5T_order_t, H5T_sign_t, H5T_str_t, H5Tarray_create2,
-    H5Tcompiler_conv, H5Tcopy, H5Tcreate, H5Tenum_create, H5Tenum_insert, H5Tequal, H5Tfind,
-    H5Tget_array_dims2, H5Tget_array_ndims, H5Tget_class, H5Tget_cset, H5Tget_member_name,
-    H5Tget_member_offset, H5Tget_member_type, H5Tget_member_value, H5Tget_nmembers, H5Tget_order,
-    H5Tget_sign, H5Tget_size, H5Tget_super, H5Tinsert, H5Tis_variable_str, H5Tset_cset,
-    H5Tset_size, H5Tset_strpad, H5Tvlen_create, H5T_VARIABLE,
+    H5T_VARIABLE, H5T_cdata_t, H5T_class_t, H5T_cset_t, H5T_order_t, H5T_sign_t, H5T_str_t,
+    H5Tarray_create2, H5Tcompiler_conv, H5Tcopy, H5Tcreate, H5Tdetect_class, H5Tenum_create,
+    H5Tenum_insert, H5Tequal, H5Tfind, H5Tget_array_dims2, H5Tget_array_ndims, H5Tget_class,
+    H5Tget_cset, H5Tget_member_name, H5Tget_member_offset, H5Tget_member_type, H5Tget_member_value,
+    H5Tget_nmembers, H5Tget_order, H5Tget_sign, H5Tget_size, H5Tget_super, H5Tinsert,
+    H5Tis_variable_str, H5Tset_cset, H5Tset_size, H5Tset_strpad, H5Tvlen_create,
 };
 use hdf5_types::{
     CompoundField, CompoundType, EnumMember, EnumType, FloatSize, H5Type, IntSize, TypeDescriptor,
@@ -19,16 +19,60 @@ use hdf5_types::{
 use crate::globals::{H5T_C_S1, H5T_NATIVE_INT, H5T_NATIVE_INT8};
 use crate::internal_prelude::*;
 
+enum EnumMembers<'a> {
+    Bool,
+    Enum(&'a [EnumMember]),
+}
+
+const BOOL_MEMBER_NAMES: &[&str] = &["FALSE", "TRUE"];
+
+impl EnumMembers<'_> {
+    /// Checks the fixed bool names or scans the enum member slice.
+    fn contains_name(&self, name: &str) -> bool {
+        match self {
+            Self::Bool => BOOL_MEMBER_NAMES.contains(&name),
+            Self::Enum(members) => members.iter().any(|member| member.name == name),
+        }
+    }
+
+    /// Collects source names that the destination member set cannot resolve.
+    fn missing_from(&self, dst: &Self) -> Vec<String> {
+        match self {
+            Self::Bool => BOOL_MEMBER_NAMES
+                .iter()
+                .filter(|name| !dst.contains_name(name))
+                .map(|name| name.to_string())
+                .collect(),
+            Self::Enum(members) => members
+                .iter()
+                .filter(|member| !dst.contains_name(&member.name))
+                .map(|member| member.name.to_owned())
+                .collect(),
+        }
+    }
+}
+
+impl<'a> EnumMembers<'a> {
+    /// Borrows enum members from descriptors, bool uses its normalized HDF5 enum names.
+    fn from_descriptor(desc: &'a TypeDescriptor) -> Option<Self> {
+        match desc {
+            TypeDescriptor::Boolean => Some(Self::Bool),
+            TypeDescriptor::Enum(enum_type) => Some(Self::Enum(&enum_type.members)),
+            _ => None,
+        }
+    }
+}
+
 #[cfg(target_endian = "big")]
 use crate::globals::{
-    H5T_IEEE_F32BE, H5T_IEEE_F64BE, H5T_STD_I16BE, H5T_STD_I32BE, H5T_STD_I64BE, H5T_STD_I8BE,
-    H5T_STD_U16BE, H5T_STD_U32BE, H5T_STD_U64BE, H5T_STD_U8BE,
+    H5T_IEEE_F32BE, H5T_IEEE_F64BE, H5T_STD_I8BE, H5T_STD_I16BE, H5T_STD_I32BE, H5T_STD_I64BE,
+    H5T_STD_U8BE, H5T_STD_U16BE, H5T_STD_U32BE, H5T_STD_U64BE,
 };
 
 #[cfg(target_endian = "little")]
 use crate::globals::{
-    H5T_IEEE_F32LE, H5T_IEEE_F64LE, H5T_STD_I16LE, H5T_STD_I32LE, H5T_STD_I64LE, H5T_STD_I8LE,
-    H5T_STD_U16LE, H5T_STD_U32LE, H5T_STD_U64LE, H5T_STD_U8LE,
+    H5T_IEEE_F32LE, H5T_IEEE_F64LE, H5T_STD_I8LE, H5T_STD_I16LE, H5T_STD_I32LE, H5T_STD_I64LE,
+    H5T_STD_U8LE, H5T_STD_U16LE, H5T_STD_U32LE, H5T_STD_U64LE,
 };
 
 #[cfg(target_endian = "big")]
@@ -62,7 +106,26 @@ impl ObjectClass for Datatype {
         &self.0
     }
 
-    // TODO: short_repr()
+    fn short_repr(&self) -> Option<String> {
+        let repr = match self.to_descriptor() {
+            Ok(s) => s.to_string(),
+            Err(e) => {
+                // Fallback: show basic HDF5 info if descriptor conversion fails
+                h5lock!({
+                    let class = H5Tget_class(self.id());
+                    let size = H5Tget_size(self.id());
+                    format!("Invalid datatype: {e} <HDF5 id: {class:?} size: {size}>)")
+                })
+            }
+        };
+        Some(repr)
+    }
+}
+
+impl Display for Datatype {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.short_repr().expect("short_repr is always implemented"))
+    }
 }
 
 impl Debug for Datatype {
@@ -85,10 +148,14 @@ impl PartialEq for Datatype {
     }
 }
 
+/// A level of possible conversion between two types.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Conversion {
+    /// No conversion.
     NoOp = 1, // TODO: rename to "None"?
+    /// Functions employing compiler casting.
     Hard,
+    /// Functions not employing compiler casting.
     Soft,
 }
 
@@ -120,12 +187,18 @@ impl Default for Conversion {
     }
 }
 
+/// The byte order of a datatype.
 #[derive(Copy, Debug, Clone, PartialEq, Eq)]
 pub enum ByteOrder {
+    /// Little endian.
     LittleEndian,
+    /// Big endian.
     BigEndian,
+    /// VAX mixed endian.
     Vax,
+    /// Compound type with mixed member orders.
     Mixed,
+    /// No particular order.
     None,
 }
 
@@ -166,6 +239,7 @@ impl Datatype {
         h5lock!(H5Tget_order(self.id())).into()
     }
 
+    /// Returns the conversion function level from `self` to `dst`, if one exists.
     pub fn conv_path<D>(&self, dst: D) -> Option<Conversion>
     where
         D: Borrow<Self>,
@@ -174,6 +248,7 @@ impl Datatype {
         let mut cdata = H5T_cdata_t::default();
         h5lock!({
             let noop = H5Tfind(*H5T_NATIVE_INT, *H5T_NATIVE_INT, &mut addr_of_mut!(cdata));
+            #[allow(unpredictable_function_pointer_comparisons)]
             if H5Tfind(self.id(), dst.id(), &mut addr_of_mut!(cdata)) == noop {
                 Some(Conversion::NoOp)
             } else {
@@ -186,33 +261,102 @@ impl Datatype {
         })
     }
 
+    /// Returns the conversion function level from `self` to a concrete type, if one exists.
     pub fn conv_to<T: H5Type>(&self) -> Option<Conversion> {
         Self::from_type::<T>().ok().and_then(|dtype| self.conv_path(dtype))
     }
 
+    /// Returns the conversion function level from a concrete type to `self`, if one exists.
     pub fn conv_from<T: H5Type>(&self) -> Option<Conversion> {
         Self::from_type::<T>().ok().and_then(|dtype| dtype.conv_path(self))
     }
 
+    /// Returns `true` if `self` represents a concrete type.
     pub fn is<T: H5Type>(&self) -> bool {
         Self::from_type::<T>().ok().map_or(false, |dtype| &dtype == self)
     }
 
     pub(crate) fn ensure_convertible(&self, dst: &Self, required: Conversion) -> Result<()> {
-        // TODO: more detailed error messages after Debug/Display are implemented for Datatype
         if let Some(conv) = self.conv_path(dst) {
             ensure!(
                 conv <= required,
-                "{} conversion path required; available: {} conversion",
-                required,
-                conv
+                "Cannot convert from {self} to {dst}, required conversion {required}; available: {conv}",
             );
+            if self.contains_enum()? || dst.contains_enum()? {
+                Self::ensure_enum_members_convertible(
+                    &self.to_descriptor()?,
+                    &dst.to_descriptor()?,
+                    "datatype",
+                )?;
+            }
             Ok(())
         } else {
-            fail!("no conversion paths found")
+            fail!("no conversion paths found from '{self:#?}' to '{dst:#?}'",)
         }
     }
 
+    /// Uses HDF5 class detection to avoid descriptor conversion for non-enum datatypes.
+    fn contains_enum(&self) -> Result<bool> {
+        Ok(h5call!(H5Tdetect_class(self.id(), H5T_class_t::H5T_ENUM))? > 0)
+    }
+
+    /// Compares enum leaves directly, otherwise follows matching nested descriptors.
+    fn ensure_enum_members_convertible(
+        src: &TypeDescriptor, dst: &TypeDescriptor, path: &str,
+    ) -> Result<()> {
+        if let Some((src_members, dst_members)) = Self::enum_member_sets(src, dst) {
+            Self::ensure_enum_member_names_present(&src_members, &dst_members, path)
+        } else {
+            Self::ensure_nested_enum_members_convertible(src, dst, path)
+        }
+    }
+
+    /// Treats bool as the HDF5 FALSE/TRUE enum when both descriptors are enum-like.
+    fn enum_member_sets<'a>(
+        src: &'a TypeDescriptor, dst: &'a TypeDescriptor,
+    ) -> Option<(EnumMembers<'a>, EnumMembers<'a>)> {
+        Some((EnumMembers::from_descriptor(src)?, EnumMembers::from_descriptor(dst)?))
+    }
+
+    /// Fails when a source enum name is absent from the destination enum.
+    fn ensure_enum_member_names_present(
+        src_members: &EnumMembers<'_>, dst_members: &EnumMembers<'_>, path: &str,
+    ) -> Result<()> {
+        let missing = src_members.missing_from(dst_members);
+        ensure!(
+            missing.is_empty(),
+            "Cannot convert enum at {path}: destination is missing source member{pluralize}: {}",
+            missing.join(", "),
+            pluralize = if missing.len() == 1 { "" } else { "s" }
+        );
+        Ok(())
+    }
+
+    /// Descends through matching compound fields and array element descriptors.
+    fn ensure_nested_enum_members_convertible(
+        src: &TypeDescriptor, dst: &TypeDescriptor, path: &str,
+    ) -> Result<()> {
+        match (src, dst) {
+            (TypeDescriptor::Compound(src_type), TypeDescriptor::Compound(dst_type)) => {
+                for &CompoundField { ref name, ref ty, offset: _, index: _ } in &src_type.fields {
+                    if let Some(dst_field) =
+                        dst_type.fields.iter().find(|dst_field| dst_field.name == *name)
+                    {
+                        let field_path = format!("{path}.{name}");
+                        Self::ensure_enum_members_convertible(&ty, &dst_field.ty, &field_path)?;
+                    }
+                }
+            }
+            (TypeDescriptor::FixedArray(src_type, _), TypeDescriptor::FixedArray(dst_type, _))
+            | (TypeDescriptor::VarLenArray(src_type), TypeDescriptor::VarLenArray(dst_type)) => {
+                Self::ensure_enum_members_convertible(src_type, dst_type, path)?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Returns a type descriptor for the datatype.
     pub fn to_descriptor(&self) -> Result<TypeDescriptor> {
         use hdf5_types::TypeDescriptor as TD;
 
@@ -301,15 +445,30 @@ impl Datatype {
                     let base_dt = Self::from_id(H5Tget_super(id))?;
                     Ok(TD::VarLenArray(Box::new(base_dt.to_descriptor()?)))
                 }
+                H5T_class_t::H5T_REFERENCE => {
+                    #[cfg(feature = "1.12.0")]
+                    if h5try!(H5Tequal(id, *crate::globals::H5T_STD_REF)) > 0 {
+                        return Ok(TD::Reference(hdf5_types::Reference::Std));
+                    }
+                    if h5try!(H5Tequal(id, *crate::globals::H5T_STD_REF_OBJ)) > 0 {
+                        Ok(TD::Reference(hdf5_types::Reference::Object))
+                    } else if h5try!(H5Tequal(id, *crate::globals::H5T_STD_REF_DSETREG)) > 0 {
+                        Ok(TD::Reference(hdf5_types::Reference::Region))
+                    } else {
+                        Err("Unsupported reference datatype".into())
+                    }
+                }
                 _ => Err("Unsupported datatype class".into()),
             }
         })
     }
 
+    /// Creates a datatype from a concrete type.
     pub fn from_type<T: H5Type>() -> Result<Self> {
         Self::from_descriptor(&<T as H5Type>::type_descriptor())
     }
 
+    /// Creates a datatype from a type descriptor.
     pub fn from_descriptor(desc: &TypeDescriptor) -> Result<Self> {
         use hdf5_types::TypeDescriptor as TD;
 
@@ -355,7 +514,7 @@ impl Datatype {
                     #[cfg(feature = "f16")]
                     FloatSize::U2 => f16_type()?,
                     FloatSize::U4 => be_le!(H5T_IEEE_F32BE, H5T_IEEE_F32LE),
-                    FloatSize::U8 => be_le!(H5T_IEEE_I16BE, H5T_IEEE_F64LE),
+                    FloatSize::U8 => be_le!(H5T_IEEE_F64BE, H5T_IEEE_F64LE),
                 }),
                 TD::Boolean => {
                     let bool_id = h5try!(H5Tenum_create(*H5T_NATIVE_INT8));
@@ -424,5 +583,39 @@ impl Datatype {
         });
 
         Self::from_id(datatype_id?)
+    }
+}
+
+/// NOTE: tests of public functions are in hdf5/tests/test_datatype.rs
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hdf5_types::{FixedAscii, FixedUnicode};
+    use pretty_assertions::assert_str_eq;
+
+    #[test]
+    fn test_ensure_convertible_fail_err_msg() {
+        const SIZE: usize = 10;
+        let src = Datatype::from_type::<FixedUnicode<SIZE>>().unwrap();
+        let dst = Datatype::from_type::<FixedAscii<SIZE>>().unwrap();
+
+        let err_msg = src.ensure_convertible(&dst, Conversion::NoOp).unwrap_err().to_string();
+
+        assert_str_eq!(
+            err_msg,
+            "no conversion paths found from '<HDF5 datatype: unicode (len 10)>' to '<HDF5 datatype: string (len 10)>'"
+        );
+    }
+
+    #[test]
+    fn test_ensure_convertible_failed_required_conversion_hard_err_msg() {
+        let src = Datatype::from_type::<u64>().unwrap();
+        let dst = Datatype::from_type::<i64>().unwrap();
+
+        let err_msg = src.ensure_convertible(&dst, Conversion::NoOp).unwrap_err().to_string();
+        assert_str_eq!(
+            err_msg,
+            "Cannot convert from uint64 to int64, required conversion no-op; available: hard"
+        );
     }
 }

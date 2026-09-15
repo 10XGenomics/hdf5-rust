@@ -16,10 +16,13 @@ impl Version {
 fn known_hdf5_versions() -> Vec<Version> {
     // Keep up to date with known_hdf5_versions in hdf5-sys
     let mut vs = Vec::new();
+    vs.extend((0..=0).map(|v| Version::new(2, 2, v))); // 2.2.[0]
+    vs.extend((0..=1).map(|v| Version::new(2, 1, v))); // 2.1.[0-1]
+    vs.extend((0..=0).map(|v| Version::new(2, 0, v))); // 2.0.[0]
     vs.extend((5..=21).map(|v| Version::new(1, 8, v))); // 1.8.[5-23]
     vs.extend((0..=8).map(|v| Version::new(1, 10, v))); // 1.10.[0-10]
     vs.extend((0..=2).map(|v| Version::new(1, 12, v))); // 1.12.[0-2]
-    vs.extend((0..=5).map(|v| Version::new(1, 14, v))); // 1.14.[0-5]
+    vs.extend((0..=6).map(|v| Version::new(1, 14, v))); // 1.14.[0-6]
     vs
 }
 
@@ -35,8 +38,8 @@ fn main() {
     }
     println!("cargo::rustc-check-cfg=cfg(msvc_dll_indirection)");
 
-    let print_feature = |key: &str| println!("cargo::rustc-cfg=feature=\"{}\"", key);
-    let print_cfg = |key: &str| println!("cargo::rustc-cfg={}", key);
+    let print_feature = |key: &str| println!("cargo::rustc-cfg=feature=\"{key}\"");
+    let print_cfg = |key: &str| println!("cargo::rustc-cfg={key}");
     for (key, _) in env::vars() {
         match key.as_str() {
             // public features

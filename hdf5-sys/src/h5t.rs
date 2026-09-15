@@ -36,7 +36,14 @@ pub enum H5T_class_t {
     H5T_ENUM = 8,
     H5T_VLEN = 9,
     H5T_ARRAY = 10,
+
+    #[cfg(not(feature = "2.0.0"))]
     H5T_NCLASSES = 11,
+
+    #[cfg(feature = "2.0.0")]
+    H5T_COMPLEX = 11,
+    #[cfg(feature = "2.0.0")]
+    H5T_NCLASSES = 12,
 }
 
 #[cfg(feature = "1.8.6")]
@@ -81,9 +88,10 @@ pub enum H5T_norm_t {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
+#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Debug)]
 pub enum H5T_cset_t {
     H5T_CSET_ERROR = -1,
+    #[default]
     H5T_CSET_ASCII = 0,
     H5T_CSET_UTF8 = 1,
     H5T_CSET_RESERVED_2 = 2,
@@ -100,12 +108,6 @@ pub enum H5T_cset_t {
     H5T_CSET_RESERVED_13 = 13,
     H5T_CSET_RESERVED_14 = 14,
     H5T_CSET_RESERVED_15 = 15,
-}
-
-impl Default for H5T_cset_t {
-    fn default() -> Self {
-        Self::H5T_CSET_ASCII
-    }
 }
 
 pub const H5T_NCSET: H5T_cset_t = H5T_CSET_RESERVED_2;
@@ -252,102 +254,117 @@ pub type H5T_conv_except_func_t = Option<
     ) -> H5T_conv_ret_t,
 >;
 
-extern "C" {
-    pub fn H5Tcreate(type_: H5T_class_t, size: size_t) -> hid_t;
-    pub fn H5Tcopy(type_id: hid_t) -> hid_t;
-    pub fn H5Tclose(type_id: hid_t) -> herr_t;
-    pub fn H5Tequal(type1_id: hid_t, type2_id: hid_t) -> htri_t;
-    pub fn H5Tlock(type_id: hid_t) -> herr_t;
-    pub fn H5Tcommit2(
+unsafe extern "C" {
+    pub unsafe fn H5Tcreate(type_: H5T_class_t, size: size_t) -> hid_t;
+    pub unsafe fn H5Tcopy(type_id: hid_t) -> hid_t;
+    pub unsafe fn H5Tclose(type_id: hid_t) -> herr_t;
+    pub unsafe fn H5Tequal(type1_id: hid_t, type2_id: hid_t) -> htri_t;
+    pub unsafe fn H5Tlock(type_id: hid_t) -> herr_t;
+    pub unsafe fn H5Tcommit2(
         loc_id: hid_t, name: *const c_char, type_id: hid_t, lcpl_id: hid_t, tcpl_id: hid_t,
         tapl_id: hid_t,
     ) -> herr_t;
-    pub fn H5Topen2(loc_id: hid_t, name: *const c_char, tapl_id: hid_t) -> hid_t;
-    pub fn H5Tcommit_anon(loc_id: hid_t, type_id: hid_t, tcpl_id: hid_t, tapl_id: hid_t) -> herr_t;
-    pub fn H5Tget_create_plist(type_id: hid_t) -> hid_t;
-    pub fn H5Tcommitted(type_id: hid_t) -> htri_t;
-    pub fn H5Tencode(obj_id: hid_t, buf: *mut c_void, nalloc: *mut size_t) -> herr_t;
-    pub fn H5Tdecode(buf: *const c_void) -> hid_t;
-    pub fn H5Tinsert(
+    pub unsafe fn H5Topen2(loc_id: hid_t, name: *const c_char, tapl_id: hid_t) -> hid_t;
+    pub unsafe fn H5Tcommit_anon(
+        loc_id: hid_t, type_id: hid_t, tcpl_id: hid_t, tapl_id: hid_t,
+    ) -> herr_t;
+    pub unsafe fn H5Tget_create_plist(type_id: hid_t) -> hid_t;
+    pub unsafe fn H5Tcommitted(type_id: hid_t) -> htri_t;
+    pub unsafe fn H5Tencode(obj_id: hid_t, buf: *mut c_void, nalloc: *mut size_t) -> herr_t;
+    #[cfg_attr(not(feature = "2.0.0"), link_name = "H5Tdecode")]
+    pub unsafe fn H5Tdecode1(buf: *const c_void) -> hid_t;
+    #[cfg(feature = "2.0.0")]
+    pub unsafe fn H5Tdecode2(buf: *const c_void, buf_size: size_t) -> hid_t;
+    pub unsafe fn H5Tinsert(
         parent_id: hid_t, name: *const c_char, offset: size_t, member_id: hid_t,
     ) -> herr_t;
-    pub fn H5Tpack(type_id: hid_t) -> herr_t;
-    pub fn H5Tenum_create(base_id: hid_t) -> hid_t;
-    pub fn H5Tenum_insert(type_: hid_t, name: *const c_char, value: *const c_void) -> herr_t;
-    pub fn H5Tenum_nameof(
+    pub unsafe fn H5Tpack(type_id: hid_t) -> herr_t;
+    pub unsafe fn H5Tenum_create(base_id: hid_t) -> hid_t;
+    pub unsafe fn H5Tenum_insert(type_: hid_t, name: *const c_char, value: *const c_void)
+    -> herr_t;
+    pub unsafe fn H5Tenum_nameof(
         type_: hid_t, value: *const c_void, name: *mut c_char, size: size_t,
     ) -> herr_t;
-    pub fn H5Tenum_valueof(type_: hid_t, name: *const c_char, value: *mut c_void) -> herr_t;
-    pub fn H5Tvlen_create(base_id: hid_t) -> hid_t;
-    pub fn H5Tarray_create2(base_id: hid_t, ndims: c_uint, dim: *const hsize_t) -> hid_t;
-    pub fn H5Tget_array_ndims(type_id: hid_t) -> c_int;
-    pub fn H5Tget_array_dims2(type_id: hid_t, dims: *mut hsize_t) -> c_int;
-    pub fn H5Tset_tag(type_: hid_t, tag: *const c_char) -> herr_t;
-    pub fn H5Tget_tag(type_: hid_t) -> *mut c_char;
-    pub fn H5Tget_super(type_: hid_t) -> hid_t;
-    pub fn H5Tget_class(type_id: hid_t) -> H5T_class_t;
-    pub fn H5Tdetect_class(type_id: hid_t, cls: H5T_class_t) -> htri_t;
-    pub fn H5Tget_size(type_id: hid_t) -> size_t;
-    pub fn H5Tget_order(type_id: hid_t) -> H5T_order_t;
-    pub fn H5Tget_precision(type_id: hid_t) -> size_t;
-    pub fn H5Tget_offset(type_id: hid_t) -> c_int;
-    pub fn H5Tget_pad(type_id: hid_t, lsb: *mut H5T_pad_t, msb: *mut H5T_pad_t) -> herr_t;
-    pub fn H5Tget_sign(type_id: hid_t) -> H5T_sign_t;
-    pub fn H5Tget_fields(
+    pub unsafe fn H5Tenum_valueof(type_: hid_t, name: *const c_char, value: *mut c_void) -> herr_t;
+    pub unsafe fn H5Tvlen_create(base_id: hid_t) -> hid_t;
+    pub unsafe fn H5Tarray_create2(base_id: hid_t, ndims: c_uint, dim: *const hsize_t) -> hid_t;
+    pub unsafe fn H5Tget_array_ndims(type_id: hid_t) -> c_int;
+    pub unsafe fn H5Tget_array_dims2(type_id: hid_t, dims: *mut hsize_t) -> c_int;
+    pub unsafe fn H5Tset_tag(type_: hid_t, tag: *const c_char) -> herr_t;
+    pub unsafe fn H5Tget_tag(type_: hid_t) -> *mut c_char;
+    pub unsafe fn H5Tget_super(type_: hid_t) -> hid_t;
+    pub unsafe fn H5Tget_class(type_id: hid_t) -> H5T_class_t;
+    pub unsafe fn H5Tdetect_class(type_id: hid_t, cls: H5T_class_t) -> htri_t;
+    pub unsafe fn H5Tget_size(type_id: hid_t) -> size_t;
+    pub unsafe fn H5Tget_order(type_id: hid_t) -> H5T_order_t;
+    pub unsafe fn H5Tget_precision(type_id: hid_t) -> size_t;
+    pub unsafe fn H5Tget_offset(type_id: hid_t) -> c_int;
+    pub unsafe fn H5Tget_pad(type_id: hid_t, lsb: *mut H5T_pad_t, msb: *mut H5T_pad_t) -> herr_t;
+    pub unsafe fn H5Tget_sign(type_id: hid_t) -> H5T_sign_t;
+    pub unsafe fn H5Tget_fields(
         type_id: hid_t, spos: *mut size_t, epos: *mut size_t, esize: *mut size_t,
         mpos: *mut size_t, msize: *mut size_t,
     ) -> herr_t;
-    pub fn H5Tget_ebias(type_id: hid_t) -> size_t;
-    pub fn H5Tget_norm(type_id: hid_t) -> H5T_norm_t;
-    pub fn H5Tget_inpad(type_id: hid_t) -> H5T_pad_t;
-    pub fn H5Tget_strpad(type_id: hid_t) -> H5T_str_t;
-    pub fn H5Tget_nmembers(type_id: hid_t) -> c_int;
-    pub fn H5Tget_member_name(type_id: hid_t, membno: c_uint) -> *mut c_char;
-    pub fn H5Tget_member_index(type_id: hid_t, name: *const c_char) -> c_int;
-    pub fn H5Tget_member_offset(type_id: hid_t, membno: c_uint) -> size_t;
-    pub fn H5Tget_member_class(type_id: hid_t, membno: c_uint) -> H5T_class_t;
-    pub fn H5Tget_member_type(type_id: hid_t, membno: c_uint) -> hid_t;
-    pub fn H5Tget_member_value(type_id: hid_t, membno: c_uint, value: *mut c_void) -> herr_t;
-    pub fn H5Tget_cset(type_id: hid_t) -> H5T_cset_t;
-    pub fn H5Tis_variable_str(type_id: hid_t) -> htri_t;
-    pub fn H5Tget_native_type(type_id: hid_t, direction: H5T_direction_t) -> hid_t;
-    pub fn H5Tset_size(type_id: hid_t, size: size_t) -> herr_t;
-    pub fn H5Tset_order(type_id: hid_t, order: H5T_order_t) -> herr_t;
-    pub fn H5Tset_precision(type_id: hid_t, prec: size_t) -> herr_t;
-    pub fn H5Tset_offset(type_id: hid_t, offset: size_t) -> herr_t;
-    pub fn H5Tset_pad(type_id: hid_t, lsb: H5T_pad_t, msb: H5T_pad_t) -> herr_t;
-    pub fn H5Tset_sign(type_id: hid_t, sign: H5T_sign_t) -> herr_t;
-    pub fn H5Tset_fields(
+    pub unsafe fn H5Tget_ebias(type_id: hid_t) -> size_t;
+    pub unsafe fn H5Tget_norm(type_id: hid_t) -> H5T_norm_t;
+    pub unsafe fn H5Tget_inpad(type_id: hid_t) -> H5T_pad_t;
+    pub unsafe fn H5Tget_strpad(type_id: hid_t) -> H5T_str_t;
+    pub unsafe fn H5Tget_nmembers(type_id: hid_t) -> c_int;
+    pub unsafe fn H5Tget_member_name(type_id: hid_t, membno: c_uint) -> *mut c_char;
+    pub unsafe fn H5Tget_member_index(type_id: hid_t, name: *const c_char) -> c_int;
+    pub unsafe fn H5Tget_member_offset(type_id: hid_t, membno: c_uint) -> size_t;
+    pub unsafe fn H5Tget_member_class(type_id: hid_t, membno: c_uint) -> H5T_class_t;
+    pub unsafe fn H5Tget_member_type(type_id: hid_t, membno: c_uint) -> hid_t;
+    pub unsafe fn H5Tget_member_value(type_id: hid_t, membno: c_uint, value: *mut c_void)
+    -> herr_t;
+    pub unsafe fn H5Tget_cset(type_id: hid_t) -> H5T_cset_t;
+    pub unsafe fn H5Tis_variable_str(type_id: hid_t) -> htri_t;
+    pub unsafe fn H5Tget_native_type(type_id: hid_t, direction: H5T_direction_t) -> hid_t;
+    pub unsafe fn H5Tset_size(type_id: hid_t, size: size_t) -> herr_t;
+    pub unsafe fn H5Tset_order(type_id: hid_t, order: H5T_order_t) -> herr_t;
+    pub unsafe fn H5Tset_precision(type_id: hid_t, prec: size_t) -> herr_t;
+    pub unsafe fn H5Tset_offset(type_id: hid_t, offset: size_t) -> herr_t;
+    pub unsafe fn H5Tset_pad(type_id: hid_t, lsb: H5T_pad_t, msb: H5T_pad_t) -> herr_t;
+    pub unsafe fn H5Tset_sign(type_id: hid_t, sign: H5T_sign_t) -> herr_t;
+    pub unsafe fn H5Tset_fields(
         type_id: hid_t, spos: size_t, epos: size_t, esize: size_t, mpos: size_t, msize: size_t,
     ) -> herr_t;
-    pub fn H5Tset_ebias(type_id: hid_t, ebias: size_t) -> herr_t;
-    pub fn H5Tset_norm(type_id: hid_t, norm: H5T_norm_t) -> herr_t;
-    pub fn H5Tset_inpad(type_id: hid_t, pad: H5T_pad_t) -> herr_t;
-    pub fn H5Tset_cset(type_id: hid_t, cset: H5T_cset_t) -> herr_t;
-    pub fn H5Tset_strpad(type_id: hid_t, strpad: H5T_str_t) -> herr_t;
-    pub fn H5Tregister(
+    pub unsafe fn H5Tset_ebias(type_id: hid_t, ebias: size_t) -> herr_t;
+    pub unsafe fn H5Tset_norm(type_id: hid_t, norm: H5T_norm_t) -> herr_t;
+    pub unsafe fn H5Tset_inpad(type_id: hid_t, pad: H5T_pad_t) -> herr_t;
+    pub unsafe fn H5Tset_cset(type_id: hid_t, cset: H5T_cset_t) -> herr_t;
+    pub unsafe fn H5Tset_strpad(type_id: hid_t, strpad: H5T_str_t) -> herr_t;
+    pub unsafe fn H5Tregister(
         pers: H5T_pers_t, name: *const c_char, src_id: hid_t, dst_id: hid_t, func: H5T_conv_t,
     ) -> herr_t;
-    pub fn H5Tunregister(
+    pub unsafe fn H5Tunregister(
         pers: H5T_pers_t, name: *const c_char, src_id: hid_t, dst_id: hid_t, func: H5T_conv_t,
     ) -> herr_t;
-    pub fn H5Tfind(src_id: hid_t, dst_id: hid_t, pcdata: *mut *mut H5T_cdata_t) -> H5T_conv_t;
-    pub fn H5Tcompiler_conv(src_id: hid_t, dst_id: hid_t) -> htri_t;
-    pub fn H5Tconvert(
+    pub unsafe fn H5Tfind(
+        src_id: hid_t, dst_id: hid_t, pcdata: *mut *mut H5T_cdata_t,
+    ) -> H5T_conv_t;
+    pub unsafe fn H5Tcompiler_conv(src_id: hid_t, dst_id: hid_t) -> htri_t;
+    pub unsafe fn H5Tconvert(
         src_id: hid_t, dst_id: hid_t, nelmts: size_t, buf: *mut c_void, background: *mut c_void,
         plist_id: hid_t,
     ) -> herr_t;
     #[deprecated(note = "deprecated since HDF5 1.8.0, use H5Tcommit2")]
-    pub fn H5Tcommit1(loc_id: hid_t, name: *const c_char, type_id: hid_t) -> herr_t;
+    pub unsafe fn H5Tcommit1(loc_id: hid_t, name: *const c_char, type_id: hid_t) -> herr_t;
     #[deprecated(note = "deprecated since HDF5 1.8.0, use H5Tcommit2")]
-    pub fn H5Topen1(loc_id: hid_t, name: *const c_char) -> hid_t;
+    pub unsafe fn H5Topen1(loc_id: hid_t, name: *const c_char) -> hid_t;
     #[deprecated(note = "deprecated since HDF5 1.8.0, use H5Tarray_create2")]
-    pub fn H5Tarray_create1(
+    pub unsafe fn H5Tarray_create1(
         base_id: hid_t, ndims: c_int, dim: *const hsize_t, perm: *const c_int,
     ) -> hid_t;
     #[deprecated(note = "deprecated since HDF5 1.8.0, use H5Tget_array_dims2")]
-    pub fn H5Tget_array_dims1(type_id: hid_t, dims: *mut hsize_t, perm: *mut c_int) -> c_int;
+    pub unsafe fn H5Tget_array_dims1(type_id: hid_t, dims: *mut hsize_t, perm: *mut c_int)
+    -> c_int;
 }
+
+#[cfg(not(feature = "2.0.0"))]
+pub use self::H5Tdecode1 as H5Tdecode;
+#[cfg(feature = "2.0.0")]
+pub use self::H5Tdecode2 as H5Tdecode;
 
 pub use self::globals::*;
 
@@ -443,6 +460,32 @@ mod globals {
     extern_static!(H5T_NATIVE_UINT_FAST64, H5T_NATIVE_UINT_FAST64_g);
     #[cfg(feature = "1.12.0")]
     extern_static!(H5T_STD_REF, H5T_STD_REF_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_COMPLEX_IEEE_F16BE, H5T_COMPLEX_IEEE_F16BE_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_COMPLEX_IEEE_F16LE, H5T_COMPLEX_IEEE_F16LE_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_COMPLEX_IEEE_F32BE, H5T_COMPLEX_IEEE_F32BE_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_COMPLEX_IEEE_F32LE, H5T_COMPLEX_IEEE_F32LE_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_COMPLEX_IEEE_F64BE, H5T_COMPLEX_IEEE_F64BE_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_COMPLEX_IEEE_F64LE, H5T_COMPLEX_IEEE_F64LE_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_FLOAT_BFLOAT16BE, H5T_FLOAT_BFLOAT16BE_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_FLOAT_BFLOAT16LE, H5T_FLOAT_BFLOAT16LE_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_FLOAT_F8E4M3, H5T_FLOAT_F8E4M3_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_FLOAT_F8E5M2, H5T_FLOAT_F8E5M2_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_NATIVE_DOUBLE_COMPLEX, H5T_NATIVE_DOUBLE_COMPLEX_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_NATIVE_FLOAT_COMPLEX, H5T_NATIVE_FLOAT_COMPLEX_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_NATIVE_LDOUBLE_COMPLEX, H5T_NATIVE_LDOUBLE_COMPLEX_g);
 }
 
 #[cfg(all(target_env = "msvc", not(feature = "static")))]
@@ -538,32 +581,65 @@ mod globals {
     extern_static!(H5T_NATIVE_UINT_FAST64, __imp_H5T_NATIVE_UINT_FAST64_g);
     #[cfg(feature = "1.12.0")]
     extern_static!(H5T_STD_REF, __imp_H5T_STD_REF_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_COMPLEX_IEEE_F16BE, __imp_H5T_COMPLEX_IEEE_F16BE_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_COMPLEX_IEEE_F16LE, __imp_H5T_COMPLEX_IEEE_F16LE_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_COMPLEX_IEEE_F32BE, __imp_H5T_COMPLEX_IEEE_F32BE_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_COMPLEX_IEEE_F32LE, __imp_H5T_COMPLEX_IEEE_F32LE_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_COMPLEX_IEEE_F64BE, __imp_H5T_COMPLEX_IEEE_F64BE_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_COMPLEX_IEEE_F64LE, __imp_H5T_COMPLEX_IEEE_F64LE_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_FLOAT_BFLOAT16BE, __imp_H5T_FLOAT_BFLOAT16BE_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_FLOAT_BFLOAT16LE, __imp_H5T_FLOAT_BFLOAT16LE_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_FLOAT_F8E4M3, __imp_H5T_FLOAT_F8E4M3_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_FLOAT_F8E5M2, __imp_H5T_FLOAT_F8E5M2_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_NATIVE_DOUBLE_COMPLEX, __imp_H5T_NATIVE_DOUBLE_COMPLEX_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_NATIVE_FLOAT_COMPLEX, __imp_H5T_NATIVE_FLOAT_COMPLEX_g);
+    #[cfg(feature = "2.0.0")]
+    extern_static!(H5T_NATIVE_LDOUBLE_COMPLEX, __imp_H5T_NATIVE_LDOUBLE_COMPLEX_g);
 }
 
 #[cfg(feature = "1.10.0")]
-extern "C" {
-    pub fn H5Tflush(type_id: hid_t) -> herr_t;
-    pub fn H5Trefresh(type_id: hid_t) -> herr_t;
+unsafe extern "C" {
+    pub unsafe fn H5Tflush(type_id: hid_t) -> herr_t;
+    pub unsafe fn H5Trefresh(type_id: hid_t) -> herr_t;
 }
 
 #[cfg(feature = "1.12.0")]
-extern "C" {
-    pub fn H5Treclaim(type_id: hid_t, space_id: hid_t, dxpl_id: hid_t, buf: *mut c_void) -> herr_t;
+unsafe extern "C" {
+    pub unsafe fn H5Treclaim(
+        type_id: hid_t, space_id: hid_t, dxpl_id: hid_t, buf: *mut c_void,
+    ) -> herr_t;
 }
 
 #[cfg(feature = "1.14.0")]
-extern "C" {
-    pub fn H5Tclose_async(
+unsafe extern "C" {
+    pub unsafe fn H5Tclose_async(
         app_file: *const c_char, app_func: *const c_char, app_line: c_uint, type_id: hid_t,
         es_id: hid_t,
     ) -> herr_t;
-    pub fn H5Tcommit_async(
+    pub unsafe fn H5Tcommit_async(
         app_file: *const c_char, app_func: *const c_char, app_line: c_uint, loc_id: hid_t,
         name: *const c_char, type_id: hid_t, lcpl_id: hid_t, tcpl_id: hid_t, tapl_id: hid_t,
         es_id: hid_t,
     ) -> herr_t;
-    pub fn H5Topen_async(
+    pub unsafe fn H5Topen_async(
         app_file: *const c_char, app_func: *const c_char, app_line: c_uint, loc_id: hid_t,
         name: *const c_char, tapl_id: hid_t, es_id: hid_t,
     ) -> hid_t;
+}
+
+#[cfg(feature = "2.0.0")]
+unsafe extern "C" {
+    pub unsafe fn H5Tcomplex_create(base_type_id: hid_t) -> hid_t;
 }

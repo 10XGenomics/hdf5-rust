@@ -11,6 +11,7 @@ use std::str::{self, FromStr};
 
 use ascii::{AsAsciiStr, AsAsciiStrError, AsciiStr};
 
+/// Errors that can occur when attempting to interpret a byte sequence as a string.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[non_exhaustive]
 pub enum StringError {
@@ -36,7 +37,7 @@ impl fmt::Display for StringError {
             StringError::InsufficientCapacity => {
                 write!(f, "string error: insufficient capacity for fixed sized string")
             }
-            StringError::AsciiError(err) => write!(f, "string error: {}", err),
+            StringError::AsciiError(err) => write!(f, "string error: {err}"),
         }
     }
 }
@@ -181,6 +182,7 @@ impl_string_traits!(VarLenUnicode);
 
 // ================================================================================
 
+/// A variable-length ASCII string.
 #[repr(C)]
 pub struct VarLenAscii {
     ptr: *mut u8,
@@ -203,6 +205,7 @@ impl Clone for VarLenAscii {
 }
 
 impl VarLenAscii {
+    /// Creates a new empty `VarLenAscii` string.
     #[inline]
     pub fn new() -> Self {
         unsafe {
@@ -220,36 +223,62 @@ impl VarLenAscii {
         Self { ptr }
     }
 
+    /// Returns the length of `self`.
     #[inline]
     pub fn len(&self) -> usize {
+        if self.ptr.is_null() {
+            return 0;
+        }
+        // Safety: Pointer null is checked above.
+        // Could still have issues if string is missing null termination.
         unsafe { libc::strlen(self.ptr as *const _) }
     }
 
+    /// Returns `true` if `self` has a length of zero bytes.
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    /// Returns a raw pointer to the string's buffer.
     #[inline]
     pub fn as_ptr(&self) -> *const u8 {
         self.ptr
     }
 
+    /// Returns the contents of the string as a byte slice.
     #[inline]
     pub fn as_bytes(&self) -> &[u8] {
+        // Treat null as empty. This could be changed to option
+        // in the future but would be a breaking change.
+        if self.ptr.is_null() {
+            return &[];
+        }
         unsafe { slice::from_raw_parts(self.ptr as *const _, self.len()) }
     }
 
+    /// Returns the contents of the string as a string slice.
     #[inline]
     pub fn as_str(&self) -> &str {
         unsafe { str::from_utf8_unchecked(self.as_bytes()) }
     }
 
+    /// Converts a byte slice into a `VarLenAscii` without checking that the string contains only
+    /// non-zero ASCII bytes.
+    ///
+    /// # Safety
+    ///
+    /// The bytes must be valid ASCII and non-zero.
     #[inline]
     pub unsafe fn from_ascii_unchecked<B: ?Sized + AsRef<[u8]>>(bytes: &B) -> Self {
         Self::from_bytes(bytes.as_ref())
     }
 
+    /// Converts a byte slice into a `VarLenAscii`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the bytes are not valid ASCII, or if any byte is zero.
     pub fn from_ascii<B: ?Sized + AsRef<[u8]>>(bytes: &B) -> Result<Self, StringError> {
         let bytes = bytes.as_ref();
         if !bytes.iter().all(|&c| c != 0) {
@@ -289,6 +318,7 @@ unsafe impl Sync for VarLenAscii {}
 
 // ================================================================================
 
+/// A variable-length UTF-8 string.
 #[repr(C)]
 pub struct VarLenUnicode {
     ptr: *mut u8,
@@ -311,6 +341,7 @@ impl Clone for VarLenUnicode {
 }
 
 impl VarLenUnicode {
+    /// Creates a new empty `VarLenUnicode` string.
     #[inline]
     pub fn new() -> Self {
         unsafe {
@@ -330,34 +361,55 @@ impl VarLenUnicode {
 
     #[inline]
     unsafe fn raw_len(&self) -> usize {
+        if self.ptr.is_null() {
+            return 0;
+        }
+        // Safety: Pointer null is checked above.
+        // Could still have issues if string is missing null termination.
         libc::strlen(self.ptr as *const _)
     }
 
+    /// Returns the length of `self`.
     #[inline]
     pub fn len(&self) -> usize {
         self.as_str().len()
     }
 
+    /// Returns `true` if `self` has a length of zero bytes.
     #[inline]
     pub fn is_empty(&self) -> bool {
         unsafe { self.raw_len() == 0 }
     }
 
+    /// Returns a raw pointer to the string's buffer.
     #[inline]
     pub fn as_ptr(&self) -> *const u8 {
         self.ptr
     }
 
+    /// Returns the contents of the string as a byte slice.
     #[inline]
     pub fn as_bytes(&self) -> &[u8] {
+        // Treat null as empty. This could be changed to option
+        // in the future but would be a breaking change.
+        if self.ptr.is_null() {
+            return &[];
+        }
         unsafe { slice::from_raw_parts(self.ptr as *const _, self.raw_len()) }
     }
 
+    /// Returns the contents of the string as a string slice.
     #[inline]
     pub fn as_str(&self) -> &str {
         unsafe { str::from_utf8_unchecked(self.as_bytes()) }
     }
 
+    /// Converts a byte slice into a `VarLenUnicode` without checking that the string contains only
+    /// non-zero UTF-8 bytes.
+    ///
+    /// # Safety
+    ///
+    /// The bytes must be valid UTF-8 and non-zero.
     #[inline]
     pub unsafe fn from_str_unchecked<S: Borrow<str>>(s: S) -> Self {
         Self::from_bytes(s.borrow().as_bytes())
@@ -383,6 +435,7 @@ unsafe impl Sync for VarLenUnicode {}
 
 // ================================================================================
 
+/// A fixed-length ASCII string.
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct FixedAscii<const N: usize> {
@@ -390,6 +443,7 @@ pub struct FixedAscii<const N: usize> {
 }
 
 impl<const N: usize> FixedAscii<N> {
+    /// Creates a new empty `FixedAscii<N>` string.
     #[inline]
     pub fn new() -> Self {
         unsafe { Self { buf: mem::zeroed() } }
@@ -408,41 +462,59 @@ impl<const N: usize> FixedAscii<N> {
         unsafe { slice::from_raw_parts(self.buf.as_ptr(), N) }
     }
 
+    /// Returns the string's capacity in bytes.
     #[inline]
     pub const fn capacity() -> usize {
         N
     }
 
+    /// Returns the length of `self`.
     #[inline]
     pub fn len(&self) -> usize {
         self.as_raw_slice().iter().rev().skip_while(|&c| *c == 0).count()
     }
 
+    /// Returns `true` if `self` has a length of zero bytes.
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.as_raw_slice().iter().all(|&c| c == 0)
     }
 
+    /// Returns a raw pointer to the string's buffer.
     #[inline]
     pub fn as_ptr(&self) -> *const u8 {
         self.buf.as_ptr()
     }
 
+    /// Returns the contents of the string as a byte slice.
     #[inline]
     pub fn as_bytes(&self) -> &[u8] {
         &self.as_raw_slice()[..self.len()]
     }
 
+    /// Returns the contents of the string as a string slice.
     #[inline]
     pub fn as_str(&self) -> &str {
         unsafe { str::from_utf8_unchecked(self.as_bytes()) }
     }
 
+    /// Converts a byte slice into a `FixedAscii` without checking that the string is valid ASCII,
+    /// and truncating at the type's capacity.
+    ///
+    /// # Safety
+    ///
+    /// The bytes must be valid ASCII.
     #[inline]
     pub unsafe fn from_ascii_unchecked<B: ?Sized + AsRef<[u8]>>(bytes: &B) -> Self {
         Self::from_bytes(bytes.as_ref())
     }
 
+    /// Converts a byte slice into a `FixedAscii`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` if the bytes are not valid ASCII or if the slice length is greater than the
+    /// type's capacity.
     pub fn from_ascii<B: ?Sized + AsRef<[u8]>>(bytes: &B) -> Result<Self, StringError> {
         let bytes = bytes.as_ref();
         if bytes.len() > N {
@@ -477,6 +549,7 @@ impl<const N: usize> AsAsciiStr for FixedAscii<N> {
 
 // ================================================================================
 
+/// A fixed-length UTF-8 string.
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct FixedUnicode<const N: usize> {
@@ -484,6 +557,7 @@ pub struct FixedUnicode<const N: usize> {
 }
 
 impl<const N: usize> FixedUnicode<N> {
+    /// Creates a new empty `FixedUnicode<N>` string.
     #[inline]
     pub fn new() -> Self {
         unsafe { Self { buf: mem::zeroed() } }
@@ -507,36 +581,48 @@ impl<const N: usize> FixedUnicode<N> {
         self.as_raw_slice().iter().rev().skip_while(|&c| *c == 0).count()
     }
 
+    /// Returns the string's capacity in bytes.
     #[inline]
     pub const fn capacity() -> usize {
         N
     }
 
+    /// Returns the length of `self`.
     #[inline]
     pub fn len(&self) -> usize {
         self.as_str().len()
     }
 
+    /// Returns `true` if `self` has a length of zero bytes.
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.raw_len() == 0
     }
 
+    /// Returns a raw pointer to the string's buffer.
     #[inline]
     pub fn as_ptr(&self) -> *const u8 {
         self.buf.as_ptr()
     }
 
+    /// Returns the contents of the string as a byte slice.
     #[inline]
     pub fn as_bytes(&self) -> &[u8] {
         &self.as_raw_slice()[..self.raw_len()]
     }
 
+    /// Returns the contents of the string as a string slice.
     #[inline]
     pub fn as_str(&self) -> &str {
         unsafe { str::from_utf8_unchecked(self.as_bytes()) }
     }
 
+    /// Converts a byte slice into a `FixedUnicode` without checking that the string is valid UTF-8,
+    /// and truncating at the type's capacity.
+    ///
+    /// # Safety
+    ///
+    /// The bytes must be valid UTF-8.
     #[inline]
     pub unsafe fn from_str_unchecked<S: Borrow<str>>(s: S) -> Self {
         Self::from_bytes(s.borrow().as_bytes())
@@ -761,4 +847,21 @@ pub mod tests {
 
     test_quickcheck_unicode!(test_quickcheck_vu, VU);
     test_quickcheck_unicode!(test_quickcheck_fu, FU);
+
+    #[test]
+    fn test_null_pointer_var_len_ascii() {
+        let ascii = VarLenAscii { ptr: ptr::null_mut() };
+
+        assert_eq!(ascii.len(), 0);
+        let string = ascii.as_str();
+        assert_eq!(string, "");
+    }
+
+    #[test]
+    fn test_null_pointer_var_len_unicode() {
+        let unicode = VarLenUnicode { ptr: ptr::null_mut() };
+        assert_eq!(unicode.len(), 0);
+        let string = unicode.as_str();
+        assert_eq!(string, "");
+    }
 }

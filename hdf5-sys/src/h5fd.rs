@@ -331,63 +331,48 @@ impl Default for H5FD_file_image_callbacks_t {
     }
 }
 
-extern "C" {
-    pub fn H5FDregister(cls: *const H5FD_class_t) -> hid_t;
-    pub fn H5FDunregister(driver_id: hid_t) -> herr_t;
-    pub fn H5FDopen(
+unsafe extern "C" {
+    pub unsafe fn H5FDregister(cls: *const H5FD_class_t) -> hid_t;
+    pub unsafe fn H5FDunregister(driver_id: hid_t) -> herr_t;
+    pub unsafe fn H5FDopen(
         name: *const c_char, flags: c_uint, fapl_id: hid_t, maxaddr: haddr_t,
     ) -> *mut H5FD_t;
-    pub fn H5FDclose(file: *mut H5FD_t) -> herr_t;
-    pub fn H5FDcmp(f1: *const H5FD_t, f2: *const H5FD_t) -> c_int;
-    pub fn H5FDquery(f: *const H5FD_t, flags: *mut c_ulong) -> c_int;
-    pub fn H5FDalloc(
+    pub unsafe fn H5FDclose(file: *mut H5FD_t) -> herr_t;
+    pub unsafe fn H5FDcmp(f1: *const H5FD_t, f2: *const H5FD_t) -> c_int;
+    pub unsafe fn H5FDquery(f: *const H5FD_t, flags: *mut c_ulong) -> c_int;
+    pub unsafe fn H5FDalloc(
         file: *mut H5FD_t, type_: H5FD_mem_t, dxpl_id: hid_t, size: hsize_t,
     ) -> haddr_t;
-    pub fn H5FDfree(
+    pub unsafe fn H5FDfree(
         file: *mut H5FD_t, type_: H5FD_mem_t, dxpl_id: hid_t, addr: haddr_t, size: hsize_t,
     ) -> herr_t;
-    pub fn H5FDget_eoa(file: *mut H5FD_t, type_: H5FD_mem_t) -> haddr_t;
-    pub fn H5FDset_eoa(file: *mut H5FD_t, type_: H5FD_mem_t, eoa: haddr_t) -> herr_t;
-    pub fn H5FDget_eof(file: *mut H5FD_t) -> haddr_t;
-    pub fn H5FDget_vfd_handle(
+    pub unsafe fn H5FDget_eoa(file: *mut H5FD_t, type_: H5FD_mem_t) -> haddr_t;
+    pub unsafe fn H5FDset_eoa(file: *mut H5FD_t, type_: H5FD_mem_t, eoa: haddr_t) -> herr_t;
+    pub unsafe fn H5FDget_eof(file: *mut H5FD_t) -> haddr_t;
+    pub unsafe fn H5FDget_vfd_handle(
         file: *mut H5FD_t, fapl: hid_t, file_handle: *mut *mut c_void,
     ) -> herr_t;
-    pub fn H5FDread(
+    pub unsafe fn H5FDread(
         file: *mut H5FD_t, type_: H5FD_mem_t, dxpl_id: hid_t, addr: haddr_t, size: size_t,
         buf: *mut c_void,
     ) -> herr_t;
-    pub fn H5FDwrite(
+    pub unsafe fn H5FDwrite(
         file: *mut H5FD_t, type_: H5FD_mem_t, dxpl_id: hid_t, addr: haddr_t, size: size_t,
         buf: *const c_void,
     ) -> herr_t;
-    pub fn H5FDflush(file: *mut H5FD_t, dxpl_id: hid_t, closing: c_uint) -> herr_t;
-    pub fn H5FDtruncate(file: *mut H5FD_t, dxpl_id: hid_t, closing: hbool_t) -> herr_t;
+    pub unsafe fn H5FDflush(file: *mut H5FD_t, dxpl_id: hid_t, closing: c_uint) -> herr_t;
+    pub unsafe fn H5FDtruncate(file: *mut H5FD_t, dxpl_id: hid_t, closing: hbool_t) -> herr_t;
 }
 
-// drivers
-extern "C" {
-    pub fn H5FD_sec2_init() -> hid_t;
-    pub fn H5FD_core_init() -> hid_t;
-    pub fn H5FD_stdio_init() -> hid_t;
-    pub fn H5FD_family_init() -> hid_t;
-    pub fn H5FD_log_init() -> hid_t;
-    pub fn H5FD_multi_init() -> hid_t;
-}
-
-#[cfg(feature = "have-parallel")]
-extern "C" {
-    pub fn H5FD_mpio_init() -> hid_t;
-}
-
-#[cfg(feature = "have-direct")]
-extern "C" {
-    pub fn H5FD_direct_init() -> hid_t;
+#[cfg(all(not(feature = "2.0.0"), feature = "have-parallel"))]
+unsafe extern "C" {
+    pub unsafe fn H5FD_mpio_init() -> hid_t;
 }
 
 #[cfg(feature = "1.10.0")]
-extern "C" {
-    pub fn H5FDlock(file: *mut H5FD_t, rw: hbool_t) -> herr_t;
-    pub fn H5FDunlock(file: *mut H5FD_t) -> herr_t;
+unsafe extern "C" {
+    pub unsafe fn H5FDlock(file: *mut H5FD_t, rw: hbool_t) -> herr_t;
+    pub unsafe fn H5FDunlock(file: *mut H5FD_t) -> herr_t;
 }
 
 #[cfg(all(feature = "1.10.6", not(feature = "1.14.0")))]
@@ -408,10 +393,10 @@ pub mod hdfs {
         stream_buffer_size: i32,
     }
 
-    extern "C" {
-        pub fn H5FD_hdfs_init() -> hid_t;
-        pub fn H5Pget_fapl_hdfs(fapl_id: hid_t, fa: *mut H5FD_hdfs_fapl_t) -> herr_t;
-        pub fn H5Pset_fapl_hdfs(fapl_id: hid_t, fa: *mut H5FD_hdfs_fapl_t) -> herr_t;
+    unsafe extern "C" {
+        pub unsafe fn H5FD_hdfs_init() -> hid_t;
+        pub unsafe fn H5Pget_fapl_hdfs(fapl_id: hid_t, fa: *mut H5FD_hdfs_fapl_t) -> herr_t;
+        pub unsafe fn H5Pset_fapl_hdfs(fapl_id: hid_t, fa: *mut H5FD_hdfs_fapl_t) -> herr_t;
     }
 }
 
@@ -432,10 +417,10 @@ pub mod ros3 {
         secret_key: [c_char; H5FD_ROS3_MAX_SECRET_KEY_LEN as usize + 1],
     }
 
-    extern "C" {
-        pub fn H5FD_ros3_init() -> hid_t;
-        pub fn H5Pget_fapl_ros3(fapl_id: hid_t, fa: *mut H5FD_ros3_fapl_t) -> herr_t;
-        pub fn H5Pset_fapl_ros3(fapl_id: hid_t, fa: *mut H5FD_ros3_fapl_t) -> herr_t;
+    unsafe extern "C" {
+        pub unsafe fn H5FD_ros3_init() -> hid_t;
+        pub unsafe fn H5Pget_fapl_ros3(fapl_id: hid_t, fa: *mut H5FD_ros3_fapl_t) -> herr_t;
+        pub unsafe fn H5Pset_fapl_ros3(fapl_id: hid_t, fa: *mut H5FD_ros3_fapl_t) -> herr_t;
     }
 }
 
@@ -458,32 +443,67 @@ pub mod splitter {
         ignore_wo_errs: hbool_t,
     }
 
-    extern "C" {
-        pub fn H5FD_splitter_init() -> hid_t;
-        pub fn H5Pget_fapl_splitter(
+    unsafe extern "C" {
+        pub unsafe fn H5FD_splitter_init() -> hid_t;
+        pub unsafe fn H5Pget_fapl_splitter(
             fapl_id: hid_t, config_ptr: *mut H5FD_splitter_vfg_config_t,
         ) -> herr_t;
-        pub fn H5Pset_fapl_splitter(
+        pub unsafe fn H5Pset_fapl_splitter(
             fapl_id: hid_t, config_ptr: *mut H5FD_splitter_vfg_config_t,
         ) -> herr_t;
     }
 }
 
 #[cfg(feature = "1.10.2")]
-extern "C" {
-    pub fn H5FDdriver_query(driver_id: hid_t, flags: *mut c_ulong) -> herr_t;
+unsafe extern "C" {
+    pub unsafe fn H5FDdriver_query(driver_id: hid_t, flags: *mut c_ulong) -> herr_t;
 }
 
 #[cfg(feature = "1.14.0")]
 type H5FD_perform_init_func_t = Option<extern "C" fn() -> hid_t>;
 
 #[cfg(feature = "1.14.0")]
-extern "C" {
-    pub fn H5FDctl(
+unsafe extern "C" {
+    pub unsafe fn H5FDctl(
         file: *mut H5FD_t, op_cod: u64, flags: u64, input: *const c_void, output: *mut *mut c_void,
     ) -> herr_t;
-    pub fn H5FDdelete(name: *const c_char, fapl_id: hid_t) -> herr_t;
-    pub fn H5FDis_driver_registered_by_name(driver_name: *const c_char) -> htri_t;
-    pub fn H5FDis_driver_registered_by_value(driver_value: H5FD_class_value_t) -> htri_t;
-    pub fn H5FDperform_init(p: H5FD_perform_init_func_t) -> hid_t;
+    pub unsafe fn H5FDdelete(name: *const c_char, fapl_id: hid_t) -> herr_t;
+    pub unsafe fn H5FDis_driver_registered_by_name(driver_name: *const c_char) -> htri_t;
+    pub unsafe fn H5FDis_driver_registered_by_value(driver_value: H5FD_class_value_t) -> htri_t;
+    #[cfg(not(feature = "2.0.0"))]
+    pub unsafe fn H5FDperform_init(p: H5FD_perform_init_func_t) -> hid_t;
 }
+
+#[cfg(all(feature = "2.0.0", not(all(target_env = "msvc", not(feature = "static")))))]
+mod globals_2_0_0 {
+    pub use crate::h5i::hid_t as id_t;
+    extern_static!(H5FD_CORE, H5FD_CORE_id_g);
+    extern_static!(H5FD_FAMILY, H5FD_FAMILY_id_g);
+    extern_static!(H5FD_LOG, H5FD_LOG_id_g);
+    extern_static!(H5FD_MULTI, H5FD_MULTI_id_g);
+    extern_static!(H5FD_ONION, H5FD_ONION_id_g);
+    extern_static!(H5FD_SEC2, H5FD_SEC2_id_g);
+    extern_static!(H5FD_SPLITTER, H5FD_SPLITTER_id_g);
+    extern_static!(H5FD_STDIO, H5FD_STDIO_id_g);
+    #[cfg(feature = "have-parallel")]
+    extern_static!(H5FD_MPIO, H5FD_MPIO_id_g);
+}
+
+#[cfg(all(feature = "2.0.0", all(target_env = "msvc", not(feature = "static"))))]
+mod globals_2_0_0 {
+    // dllimport hack
+    pub type id_t = usize;
+    extern_static!(H5FD_CORE, __imp_H5FD_CORE_id_g);
+    extern_static!(H5FD_FAMILY, __imp_H5FD_FAMILY_id_g);
+    extern_static!(H5FD_LOG, __imp_H5FD_LOG_id_g);
+    extern_static!(H5FD_MULTI, __imp_H5FD_MULTI_id_g);
+    extern_static!(H5FD_ONION, __imp_H5FD_ONION_id_g);
+    extern_static!(H5FD_SEC2, __imp_H5FD_SEC2_id_g);
+    extern_static!(H5FD_SPLITTER, __imp_H5FD_SPLITTER_id_g);
+    extern_static!(H5FD_STDIO, __imp_H5FD_STDIO_id_g);
+    #[cfg(feature = "have-parallel")]
+    extern_static!(H5FD_MPIO, __imp_H5FD_MPIO_id_g);
+}
+
+#[cfg(feature = "2.0.0")]
+pub use globals_2_0_0::*;

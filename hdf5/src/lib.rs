@@ -46,6 +46,7 @@
 // To build docs locally:
 // RUSTDOCFLAGS="--cfg docsrs" cargo +nightly doc --features blosc,lzf
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![allow(unsafe_op_in_unsafe_fn)]
 
 #[cfg(all(feature = "mpio", not(feature = "have-parallel")))]
 compile_error!("Enabling \"mpio\" feature requires HDF5 library built with MPI support");
@@ -54,16 +55,17 @@ mod export {
     pub use crate::{
         class::from_id,
         dim::{Dimension, Ix},
-        error::{silence_errors, Error, ErrorFrame, ErrorStack, ExpandedErrorStack, Result},
+        error::{Error, ErrorFrame, ErrorStack, ExpandedErrorStack, Result, silence_errors},
+        error_codes::{MajorErrorCode, MinorErrorCode},
         hl::extents::{Extent, Extents, SimpleExtents},
         hl::selection::{Hyperslab, Selection, SliceOrIndex},
         hl::{
-            references::{ObjectReference, ObjectReference1, ReferencedObject},
             Attribute, AttributeBuilder, AttributeBuilderData, AttributeBuilderEmpty,
             AttributeBuilderEmptyShape, ByteReader, Container, Conversion, Dataset, DatasetBuilder,
             DatasetBuilderData, DatasetBuilderEmpty, DatasetBuilderEmptyShape, Dataspace, Datatype,
-            File, FileBuilder, Group, LinkInfo, LinkType, Location, LocationInfo, LocationToken,
-            LocationType, Object, OpenMode, PropertyList, Reader, Writer,
+            File, FileBuilder, Group, GroupBuilder, LinkInfo, LinkType, Location, LocationInfo,
+            LocationToken, LocationType, Object, OpenMode, PropertyList, Reader, Writer,
+            references::{ObjectReference, ObjectReference1, ReferencedObject},
         },
     };
 
@@ -76,10 +78,12 @@ mod export {
     pub use hdf5_derive::H5Type;
     pub use hdf5_types::H5Type;
 
+    /// Base types and interfaces for creating compound data types.
     pub mod types {
         pub use hdf5_types::*;
     }
 
+    /// Multi-dimensional datasets.
     pub mod dataset {
         #[cfg(feature = "1.10.5")]
         pub use crate::hl::chunks::ChunkInfo;
@@ -90,40 +94,56 @@ mod export {
         pub use crate::hl::plist::dataset_create::*;
     }
 
+    /// Datatype objects for defining the layout of a data element.
     pub mod datatype {
         pub use crate::hl::datatype::{ByteOrder, Conversion, Datatype};
     }
 
+    /// HDF5 file objects.
     pub mod file {
         pub use crate::hl::file::{File, FileBuilder, OpenMode};
         pub use crate::hl::plist::file_access::*;
         pub use crate::hl::plist::file_create::*;
     }
 
+    /// Property list objects.
     pub mod plist {
         pub use crate::hl::plist::dataset_access::{DatasetAccess, DatasetAccessBuilder};
         pub use crate::hl::plist::dataset_create::{DatasetCreate, DatasetCreateBuilder};
         pub use crate::hl::plist::file_access::{FileAccess, FileAccessBuilder};
         pub use crate::hl::plist::file_create::{FileCreate, FileCreateBuilder};
+        pub use crate::hl::plist::group_create::{GroupCreate, GroupCreateBuilder};
         pub use crate::hl::plist::link_create::{LinkCreate, LinkCreateBuilder};
+        pub use crate::hl::plist::object_copy::{ObjectCopy, ObjectCopyBuilder};
         pub use crate::hl::plist::{PropertyList, PropertyListClass};
 
+        /// Dataset access property lists.
         pub mod dataset_access {
             pub use crate::hl::plist::dataset_access::*;
         }
+        /// Dataset creation property lists.
         pub mod dataset_create {
             pub use crate::hl::plist::dataset_create::*;
         }
+        /// File access property lists.
         pub mod file_access {
             pub use crate::hl::plist::file_access::*;
         }
+        /// File creation property lists.
         pub mod file_create {
             pub use crate::hl::plist::file_create::*;
         }
+        /// Group creation property lists.
+        pub mod group_create {
+            pub use crate::hl::plist::group_create::*;
+        }
+        /// Link creation property lists.
         pub mod link_create {
             pub use crate::hl::plist::link_create::*;
         }
     }
+
+    /// Filters for data compression and validation during file I/O.
     pub mod filters {
         pub use crate::hl::filters::*;
     }
@@ -138,6 +158,7 @@ mod class;
 
 mod dim;
 mod error;
+mod error_codes;
 #[doc(hidden)]
 pub mod globals;
 mod handle;
@@ -155,7 +176,7 @@ mod internal_prelude {
     pub use hdf5_sys::{
         h5::{haddr_t, hbool_t, herr_t, hsize_t},
         h5i::H5I_type_t::{self, *},
-        h5i::{hid_t, H5I_INVALID_HID},
+        h5i::{H5I_INVALID_HID, hid_t},
         h5p::H5P_DEFAULT,
         h5s::H5S_ALL,
     };
@@ -211,8 +232,8 @@ pub const HDF5_VERSION: hdf5_sys::Version = hdf5_sys::HDF5_VERSION;
 
 #[cfg(test)]
 pub mod tests {
-    use crate::library_version;
     use crate::HDF5_VERSION;
+    use crate::library_version;
 
     #[test]
     pub fn test_minimum_library_version() {

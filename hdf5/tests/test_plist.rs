@@ -16,7 +16,7 @@ macro_rules! test_pl {
         b.$field($($arg,)+);
         let fapl = b.finish()?;
         $(assert_eq!(fapl.$field().$name, $value);)+
-        paste::paste! { $(assert_eq!(fapl.[<get_ $field>]()?.$name, $value);)+ }
+        pastey::paste! { $(assert_eq!(fapl.[<get_ $field>]()?.$name, $value);)+ }
     });
 
     ($ty:ident, $field:ident: $($name:ident=$value:expr),+) => (
@@ -32,7 +32,7 @@ macro_rules! test_pl {
         b.$field($arg);
         let fapl = b.finish()?;
         assert_eq!(fapl.$field(), $value);
-        paste::paste! { assert_eq!(fapl.[<get_ $field>]()?, $value); }
+        pastey::paste! { assert_eq!(fapl.[<get_ $field>]()?, $value); }
     });
 
     ($ty:ident, $field:ident: $value:expr) => ({
@@ -317,7 +317,7 @@ fn test_fapl_driver_mpio() -> hdf5::Result<()> {
     use std::os::raw::c_int;
     use std::ptr;
 
-    use mpi_sys::{MPI_Comm_compare, MPI_Init, MPI_Initialized, MPI_CONGRUENT, RSMPI_COMM_WORLD};
+    use mpi_sys::{MPI_CONGRUENT, MPI_Comm_compare, MPI_Init, MPI_Initialized, RSMPI_COMM_WORLD};
 
     let mut initialized: c_int = 1;
     unsafe { MPI_Initialized(&mut initialized) };
@@ -329,6 +329,8 @@ fn test_fapl_driver_mpio() -> hdf5::Result<()> {
     let mut b = FileAccess::build();
     b.mpio(world_comm, None);
 
+    let driver = b.finish()?.get_driver()?;
+    println!("{:?}", driver);
     let d = check_matches!(b.finish()?.get_driver()?, d, FileDriver::Mpio(d));
     let mut cmp = mem::MaybeUninit::uninit();
     unsafe { MPI_Comm_compare(d.comm, world_comm, cmp.as_mut_ptr()) };
@@ -620,6 +622,30 @@ fn test_dapl_set_virtual_view() -> hdf5::Result<()> {
 fn test_dapl_set_virtual_printf_gap() -> hdf5::Result<()> {
     test_pl!(DA, virtual_printf_gap: 0);
     test_pl!(DA, virtual_printf_gap: 123);
+    Ok(())
+}
+
+type GC = GroupCreate;
+type GCB = GroupCreateBuilder;
+
+#[test]
+fn test_gcpl_common() -> hdf5::Result<()> {
+    test_pl_common!(GC, PropertyListClass::GroupCreate, |b: &mut GCB| b
+        .obj_track_times(false)
+        .finish());
+    Ok(())
+}
+
+#[test]
+fn test_gcpl_obj_track_times() -> hdf5::Result<()> {
+    assert_eq!(GC::try_new()?.get_obj_track_times()?, true);
+    assert_eq!(GC::try_new()?.obj_track_times(), true);
+    test_pl!(GC, obj_track_times: true);
+    test_pl!(GC, obj_track_times: false);
+    assert_eq!(
+        GCB::from_plist(&GCB::new().obj_track_times(false).finish()?)?.finish()?.obj_track_times(),
+        false
+    );
     Ok(())
 }
 
@@ -932,4 +958,36 @@ fn test_lcpl_char_encoding() -> hdf5::Result<()> {
     let pl = LCB::new().char_encoding(CharEncoding::Utf8).finish()?;
     assert_eq!(LCB::from_plist(&pl)?.finish()?.get_char_encoding()?, CharEncoding::Utf8);
     Ok(())
+}
+
+#[test]
+#[cfg(any(all(feature = "1.10.7", not(feature = "1.12.0")), feature = "1.12.1"))]
+fn test_fapl_file_locking() -> hdf5::Result<()> {
+    test_pl!(FA, file_locking: true);
+    test_pl!(FA, file_locking: false);
+    Ok(())
+}
+
+#[test]
+fn test_dcpl_filter_requires_chunking() -> hdf5::Result<()> {
+    let mut b = DatasetCreate::build();
+    b.deflate(4);
+    let err = b.finish().unwrap_err();
+    assert_eq!(err.to_string(), "Filter requires dataset to be chunked");
+    assert!(err.stack().is_none(), "expected a Rust-side error, got a stack: {err:?}");
+
+    // Adding a chunk makes it valid
+    b.chunk([4]);
+    b.finish()?;
+    Ok(())
+}
+
+#[test]
+fn test_property_list_class_from_str() {
+    assert_eq!(
+        PropertyListClass::from_str("dataset create").unwrap(),
+        PropertyListClass::DatasetCreate
+    );
+    let err = PropertyListClass::from_str("not a class").unwrap_err();
+    assert_eq!(err.to_string(), "invalid property list class: not a class");
 }

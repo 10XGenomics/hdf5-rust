@@ -14,15 +14,21 @@ pub(crate) struct hvl_t {
     pub ptr: *mut c_void,
 }
 
+/// A valid integer size.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum IntSize {
+    /// 1 byte.
     U1 = 1,
+    /// 2 bytes.
     U2 = 2,
+    /// 4 bytes.
     U4 = 4,
+    /// 8 bytes.
     U8 = 8,
 }
 
 impl IntSize {
+    /// Returns an `IntSize` of `size` bytes, or `None` if `size` is invalid.
     pub const fn from_int(size: usize) -> Option<Self> {
         if size == 1 {
             Some(Self::U1)
@@ -38,15 +44,20 @@ impl IntSize {
     }
 }
 
+/// A valid floating-point number size.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum FloatSize {
+    /// 2 bytes.
     #[cfg(feature = "f16")]
     U2 = 2,
+    /// 4 bytes.
     U4 = 4,
+    /// 8 bytes.
     U8 = 8,
 }
 
 impl FloatSize {
+    /// Returns a `FloatSize` of `size` bytes, or `None` if `size` is invalid.
     pub const fn from_int(size: usize) -> Option<Self> {
         #[cfg(feature = "f16")]
         {
@@ -62,20 +73,28 @@ impl FloatSize {
     }
 }
 
+/// A descriptor for an enumeration datatype member.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EnumMember {
+    /// The name of the member.
     pub name: String,
+    /// The value of the member.
     pub value: u64,
 }
 
+/// A descriptor for an enumeration datatype.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EnumType {
+    /// The size of the underlying integer type.
     pub size: IntSize,
+    /// Whether to use a signed integer.
     pub signed: bool,
+    /// The enumeration datatype members.
     pub members: Vec<EnumMember>,
 }
 
 impl EnumType {
+    /// Returns the type descriptor of the underlying integer datatype.
     #[inline]
     pub fn base_type(&self) -> TypeDescriptor {
         if self.signed {
@@ -86,31 +105,42 @@ impl EnumType {
     }
 }
 
+/// A descriptor for a compound datatype field.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompoundField {
+    /// The name of the field.
     pub name: String,
+    /// The type of the field.
     pub ty: TypeDescriptor,
+    /// The byte offset of the field.
     pub offset: usize,
+    /// The ordering of the field within the compound type.
     pub index: usize,
 }
 
 impl CompoundField {
+    /// Creates a new `CompoundField`.
     pub fn new(name: &str, ty: TypeDescriptor, offset: usize, index: usize) -> Self {
         Self { name: name.to_owned(), ty, offset, index }
     }
 
+    /// Creates a new `CompoundField` for a concrete type.
     pub fn typed<T: H5Type>(name: &str, offset: usize, index: usize) -> Self {
         Self::new(name, T::type_descriptor(), offset, index)
     }
 }
 
+/// A descriptor for a compound datatype.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompoundType {
+    /// The fields of the datatype.
     pub fields: Vec<CompoundField>,
+    /// The size in bytes of the datatype.
     pub size: usize,
 }
 
 impl CompoundType {
+    /// Converts `self` to a C struct representation.
     pub fn to_c_repr(&self) -> Self {
         let mut layout = self.clone();
         layout.fields.sort_by_key(|f| f.index);
@@ -133,6 +163,7 @@ impl CompoundType {
         layout
     }
 
+    /// Converts `self` to a packed representation.
     pub fn to_packed_repr(&self) -> Self {
         let mut layout = self.clone();
         layout.fields.sort_by_key(|f| f.index);
@@ -146,19 +177,32 @@ impl CompoundType {
     }
 }
 
+/// A descriptor for an HDF5 datatype.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TypeDescriptor {
+    /// A signed integer.
     Integer(IntSize),
+    /// An unsigned integer.
     Unsigned(IntSize),
+    /// A floating-point number.
     Float(FloatSize),
+    /// A boolean value.
     Boolean,
+    /// An enumeration datatype.
     Enum(EnumType),
+    /// A compound datatype.
     Compound(CompoundType),
+    /// A fixed-length array.
     FixedArray(Box<Self>, usize),
+    /// A fixed-length ASCII string.
     FixedAscii(usize),
+    /// A fixed-length UTF-8 string.
     FixedUnicode(usize),
+    /// A variable-length array.
     VarLenArray(Box<Self>),
+    /// A variable-length ASCII string.
     VarLenAscii,
+    /// A variable-length UTF-8 string.
     VarLenUnicode,
     Reference(Reference),
 }
@@ -179,12 +223,12 @@ impl Display for TypeDescriptor {
             TypeDescriptor::Float(FloatSize::U4) => write!(f, "float32"),
             TypeDescriptor::Float(FloatSize::U8) => write!(f, "float64"),
             TypeDescriptor::Boolean => write!(f, "bool"),
-            TypeDescriptor::Enum(ref tp) => write!(f, "enum ({})", tp.base_type()),
-            TypeDescriptor::Compound(ref tp) => write!(f, "compound ({} fields)", tp.fields.len()),
-            TypeDescriptor::FixedArray(ref tp, n) => write!(f, "[{}; {}]", tp, n),
-            TypeDescriptor::FixedAscii(n) => write!(f, "string (len {})", n),
-            TypeDescriptor::FixedUnicode(n) => write!(f, "unicode (len {})", n),
-            TypeDescriptor::VarLenArray(ref tp) => write!(f, "[{}] (var len)", tp),
+            TypeDescriptor::Enum(tp) => write!(f, "enum ({})", tp.base_type()),
+            TypeDescriptor::Compound(tp) => write!(f, "compound ({} fields)", tp.fields.len()),
+            TypeDescriptor::FixedArray(tp, n) => write!(f, "[{tp}; {n}]"),
+            TypeDescriptor::FixedAscii(n) => write!(f, "string (len {n})"),
+            TypeDescriptor::FixedUnicode(n) => write!(f, "unicode (len {n})"),
+            TypeDescriptor::VarLenArray(tp) => write!(f, "[{tp}] (var len)"),
             TypeDescriptor::VarLenAscii => write!(f, "string (var len)"),
             TypeDescriptor::VarLenUnicode => write!(f, "unicode (var len)"),
             TypeDescriptor::Reference(Reference::Object) => write!(f, "reference (object)"),
@@ -196,6 +240,7 @@ impl Display for TypeDescriptor {
 }
 
 impl TypeDescriptor {
+    /// Returns the size of the [`TypeDescriptor`] variant in bytes
     pub fn size(&self) -> usize {
         match *self {
             Self::Integer(size) | Self::Unsigned(size) => size as _,
@@ -223,6 +268,7 @@ impl TypeDescriptor {
         }
     }
 
+    /// Converts `self` to a C-compatible representation.
     pub fn to_c_repr(&self) -> Self {
         match *self {
             Self::Compound(ref compound) => Self::Compound(compound.to_c_repr()),
@@ -232,6 +278,7 @@ impl TypeDescriptor {
         }
     }
 
+    /// Converts `self` to a packed representation.
     pub fn to_packed_repr(&self) -> Self {
         match *self {
             Self::Compound(ref compound) => Self::Compound(compound.to_packed_repr()),
@@ -242,7 +289,18 @@ impl TypeDescriptor {
     }
 }
 
+/// A type that can be represented as an HDF5 datatype.
+///
+/// # Derivable
+/// This trait can be used with `#[derive]`.
+///
+/// To `derive` on structs, they must be one of: `repr(C)`, `repr(packed)`, or `repr(transparent)`,
+/// and have at least one field, all of which must implement `H5Type`.
+///
+/// To `derive` on enums, they must have an explicit `repr` and at least one variant, all of which
+/// must be unit variants with explicit discriminants.
 pub unsafe trait H5Type: 'static {
+    /// Returns a descriptor for an equivalent HDF5 datatype.
     fn type_descriptor() -> TypeDescriptor;
 }
 
@@ -384,7 +442,7 @@ unsafe impl H5Type for VarLenUnicode {
 #[cfg(test)]
 pub mod tests {
     use super::TypeDescriptor as TD;
-    use super::{hvl_t, FloatSize, H5Type, IntSize};
+    use super::{FloatSize, H5Type, IntSize, hvl_t};
     use crate::array::VarLenArray;
     use crate::string::{FixedAscii, FixedUnicode, VarLenAscii, VarLenUnicode};
     use std::mem;

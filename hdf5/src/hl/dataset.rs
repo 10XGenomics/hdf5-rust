@@ -1,18 +1,12 @@
+//! Interfaces for `Dataset` objects.
+
 use std::fmt::{self, Debug};
 use std::ops::Deref;
 
 use ndarray::{self, ArrayView};
 
-use hdf5_sys::h5::HADDR_UNDEF;
-use hdf5_sys::h5d::{
-    H5Dcreate2, H5Dcreate_anon, H5Dget_access_plist, H5Dget_create_plist, H5Dget_offset,
-    H5Dset_extent,
-};
-use hdf5_sys::h5l::H5Ldelete;
-use hdf5_sys::h5p::H5P_DEFAULT;
-use hdf5_sys::h5z::H5Z_filter_t;
-use hdf5_types::{OwnedDynValue, TypeDescriptor};
-
+#[cfg(feature = "zfp")]
+use crate::hl;
 #[cfg(feature = "blosc")]
 use crate::hl::filters::{Blosc, BloscShuffle};
 use crate::hl::filters::{Filter, SZip, ScaleOffset};
@@ -26,6 +20,17 @@ use crate::hl::plist::dataset_create::{
 };
 use crate::hl::plist::link_create::{CharEncoding, LinkCreate, LinkCreateBuilder};
 use crate::internal_prelude::*;
+use hdf5_sys::h5::HADDR_UNDEF;
+use hdf5_sys::h5d::{
+    H5Dcreate_anon, H5Dcreate2, H5Dget_access_plist, H5Dget_create_plist, H5Dget_offset,
+    H5Dset_extent,
+};
+#[cfg(feature = "1.10.0")]
+use hdf5_sys::h5d::{H5Dflush, H5Drefresh};
+use hdf5_sys::h5l::H5Ldelete;
+use hdf5_sys::h5p::H5P_DEFAULT;
+use hdf5_sys::h5z::H5Z_filter_t;
+use hdf5_types::{OwnedDynValue, TypeDescriptor};
 
 /// Default chunk size when filters are enabled and the chunk size is not specified.
 pub const DEFAULT_CHUNK_SIZE_KB: usize = 64 * 1024;
@@ -154,6 +159,22 @@ impl Dataset {
     pub fn filters(&self) -> Vec<Filter> {
         self.dcpl().map_or(Vec::default(), |pl| pl.filters())
     }
+
+    /// Flush the dataset metadata from the metadata cache to the file
+    #[cfg(feature = "1.10.0")]
+    pub fn flush(&self) -> Result<()> {
+        let id = self.id();
+        h5call!(H5Dflush(id))?;
+        Ok(())
+    }
+
+    /// Refresh metadata items assosicated with the dataset
+    #[cfg(feature = "1.10.0")]
+    pub fn refresh(&self) -> Result<()> {
+        let id = self.id();
+        h5call!(H5Drefresh(id))?;
+        Ok(())
+    }
 }
 
 pub struct Maybe<T>(Option<T>);
@@ -227,6 +248,34 @@ impl DatasetBuilder {
             conv: Conversion::Soft,
         }
     }
+    //
+    // #[cfg(feature = "zfp")]
+    // pub fn zfp_rate(self, rate: f64) -> Self {
+    //     let new_ds = self.with_dcpl(|p| p.set_filters(&vec![Filter::zfp_rate(rate)]));
+    //
+    //     new_ds
+    // }
+    //
+    // #[cfg(feature = "zfp")]
+    // pub fn zfp_precision(self, precision: u8) -> Self {
+    //     let new_ds = self.with_dcpl(|p| p.set_filters(&vec![Filter::zfp_precision(precision)]));
+    //
+    //     new_ds
+    // }
+    //
+    // #[cfg(feature = "zfp")]
+    // pub fn zfp_accuracy(self, accuracy: f64) -> Self {
+    //     let new_ds = self.with_dcpl(|p| p.set_filters(&vec![Filter::zfp_accuracy(accuracy)]));
+    //
+    //     new_ds
+    // }
+    //
+    // #[cfg(feature = "zfp")]
+    // pub fn zfp_reversible(self) -> Self {
+    //     let new_ds = self.with_dcpl(|p| p.set_filters(&vec![Filter::zfp_reversible()]));
+    //
+    //     new_ds
+    // }
 }
 
 #[derive(Clone)]
@@ -311,11 +360,15 @@ where
     }
 }
 
+/// Options for how to chunk data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Chunk {
-    Exact(Vec<Ix>), // exact chunk shape
-    MinKB(usize),   // minimum chunk shape in KB
-    None,           // leave it unchunked
+    /// Exact chunk shape.
+    Exact(Vec<Ix>),
+    /// Minimum chunk shape in kilobytes.
+    MinKB(usize),
+    /// Leave the data unchunked.
+    None,
 }
 
 impl Default for Chunk {
@@ -340,11 +393,7 @@ fn compute_chunk_shape(dims: &SimpleExtents, minimum_elements: usize) -> Vec<Ix>
             // in dividing the chunk in two uneven parts,
             // we instead merge these into the same chunk
             // to prevent having small chunks
-            if 2 * wanted_size > maxdim + 1 {
-                maxdim
-            } else {
-                std::cmp::min(wanted_size, maxdim)
-            }
+            if 2 * wanted_size > maxdim + 1 { maxdim } else { std::cmp::min(wanted_size, maxdim) }
         });
 
         product_cs *= *cs;
@@ -695,6 +744,36 @@ impl DatasetBuilderInner {
         self.with_dcpl(|pl| pl.blosc_zstd(clevel, shuffle));
     }
 
+    #[cfg(feature = "zfp")]
+    pub fn zfp_rate(&mut self, rate: f64, chunk_dims: Vec<usize>, n_bytes: u8) {
+        hl::filters::zfp::register_zfp().expect("Failed to register ZFP filter");
+        self.with_dcpl(|p| {
+            p.set_filters(&vec![Filter::zfp_rate(rate, chunk_dims.clone(), n_bytes)])
+        });
+    }
+
+    #[cfg(feature = "zfp")]
+    pub fn zfp_precision(&mut self, precision: u8, chunk_dims: Vec<usize>, n_bytes: u8) {
+        hl::filters::zfp::register_zfp().expect("Failed to register ZFP filter");
+        self.with_dcpl(|p| {
+            p.set_filters(&vec![Filter::zfp_precision(precision, chunk_dims.clone(), n_bytes)])
+        });
+    }
+
+    #[cfg(feature = "zfp")]
+    pub fn zfp_accuracy(&mut self, accuracy: f64, chunk_dims: Vec<usize>, n_bytes: u8) {
+        hl::filters::zfp::register_zfp().expect("Failed to register ZFP filter");
+        self.with_dcpl(|pl| pl.zfp_accuracy(accuracy, chunk_dims.clone(), n_bytes));
+    }
+
+    #[cfg(feature = "zfp")]
+    pub fn zfp_reversible(&mut self, chunk_dims: Vec<usize>, n_bytes: u8) {
+        hl::filters::zfp::register_zfp().expect("Failed to register ZFP filter");
+        self.with_dcpl(|p| {
+            p.set_filters(&vec![Filter::zfp_reversible(chunk_dims.clone(), n_bytes)])
+        });
+    }
+
     pub fn add_filter(&mut self, id: H5Z_filter_t, cdata: &[c_uint]) {
         self.with_dcpl(|pl| pl.add_filter(id, cdata));
     }
@@ -825,7 +904,7 @@ impl DatasetBuilderInner {
 
 macro_rules! impl_builder {
     ($plist:ident: $name:ident/$short:ident) => {
-        paste::paste! {
+        pastey::paste! {
             #[inline] #[must_use]
             pub fn [<set_ $name _plist>](mut self, $short: &$plist) -> Self {
                 self.builder.[<set_ $name _plist>]($short); self
@@ -873,7 +952,7 @@ macro_rules! impl_builder {
         $(#[$meta:meta])*
         $plist:ident: $name:ident($($var:ident: $ty:ty),*)
     ) => {
-        paste::paste! {
+        pastey::paste! {
             $(#[$meta])*
             #[inline] #[must_use] #[doc =
                 "\u{21b3} [`" $plist "Builder::" $name "`]"
@@ -888,7 +967,7 @@ macro_rules! impl_builder {
         $(#[$meta:meta])*
         $plist:ident: $name:ident<$($gid:ident: $gty:path),+>($($var:ident: $ty:ty),*)
     ) => {
-        paste::paste! {
+        pastey::paste! {
             $(#[$meta])*
             #[inline] #[must_use] #[doc =
                 "\u{21b3} [`" $plist "Builder::" $name "`]"
@@ -954,6 +1033,25 @@ macro_rules! impl_builder_methods {
             #[cfg(feature = "blosc-zstd")]
             DatasetCreate: blosc_zstd(clevel: u8, shuffle: impl Into<BloscShuffle>)
         );
+
+        impl_builder!(
+            #[cfg(feature = "zfp")]
+            DatasetCreate: zfp_rate(rate: f64,chunk_dims: Vec<usize>,n_bytes: u8)
+        );
+        impl_builder!(
+            #[cfg(feature = "zfp")]
+            DatasetCreate: zfp_accuracy(accuracy: f64,chunk_dims: Vec<usize>,n_bytes: u8)
+        );
+        impl_builder!(
+            #[cfg(feature = "zfp")]
+            DatasetCreate: zfp_precision(rate: u8,chunk_dims: Vec<usize>,n_bytes: u8)
+        );
+        impl_builder!(
+            #[cfg(feature = "zfp")]
+            DatasetCreate: zfp_reversible(chunk_dims: Vec<usize>,n_bytes: u8)
+        );
+
+
         impl_builder!(DatasetCreate: add_filter(id: H5Z_filter_t, cdata: &[c_uint]));
         impl_builder!(DatasetCreate: clear_filters());
         impl_builder!(DatasetCreate: alloc_time(alloc_time: Option<AllocTime>));
@@ -1009,7 +1107,7 @@ impl<'d, T2: H5Type, D2: ndarray::Dimension> DatasetBuilderData<'d, T2, D2> {
 
 #[cfg(test)]
 mod tests {
-    use super::{compute_chunk_shape, DatasetBuilder};
+    use super::{DatasetBuilder, compute_chunk_shape};
     use crate::filters::Filter;
     use crate::test::with_tmp_file;
     use crate::{Extent, Result, SimpleExtents};

@@ -1,9 +1,11 @@
+//! Dynamically-typed values.
+
 use std::fmt::{self, Debug, Display};
 use std::mem;
 use std::ptr;
 use std::slice;
 
-use crate::h5type::{hvl_t, CompoundType, EnumType, FloatSize, H5Type, IntSize, TypeDescriptor};
+use crate::h5type::{CompoundType, EnumType, FloatSize, H5Type, IntSize, TypeDescriptor, hvl_t};
 use crate::string::{VarLenAscii, VarLenUnicode};
 
 fn read_raw<T: Copy>(buf: &[u8]) -> T {
@@ -26,6 +28,7 @@ unsafe trait DynClone {
     fn dyn_clone(&mut self, out: &mut [u8]);
 }
 
+/// A dynamically-typed integer.
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum DynInteger {
     Int8(i8),
@@ -114,6 +117,7 @@ impl From<DynInteger> for DynValue<'_> {
     }
 }
 
+/// A dynamically-typed floating-point value.
 #[derive(Copy, Clone, PartialEq)]
 pub enum DynFloat {
     #[cfg(feature = "f16")]
@@ -173,6 +177,7 @@ impl From<DynFloat> for DynValue<'_> {
     }
 }
 
+/// A dynamically-typed scalar value.
 #[derive(Copy, Clone, PartialEq)]
 pub enum DynScalar {
     Integer(DynInteger),
@@ -212,6 +217,7 @@ impl From<DynScalar> for DynValue<'static> {
     }
 }
 
+/// A dynamically-typed enumeration value.
 #[derive(Copy, Clone)]
 pub struct DynEnum<'a> {
     tp: &'a EnumType,
@@ -269,6 +275,7 @@ impl<'a> From<DynEnum<'a>> for DynValue<'a> {
     }
 }
 
+/// A dynamically-typed compound value.
 pub struct DynCompound<'a> {
     tp: &'a CompoundType,
     buf: &'a [u8],
@@ -279,7 +286,7 @@ impl<'a> DynCompound<'a> {
         Self { tp, buf }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&str, DynValue)> {
+    pub fn iter(&self) -> impl Iterator<Item = (&str, DynValue<'a>)> {
         self.tp.fields.iter().map(move |field| {
             (
                 field.name.as_ref(),
@@ -354,6 +361,7 @@ impl<'a> From<DynCompound<'a>> for DynValue<'a> {
     }
 }
 
+/// A dynamically-typed array.
 pub struct DynArray<'a> {
     tp: &'a TypeDescriptor,
     buf: &'a [u8],
@@ -379,7 +387,7 @@ impl<'a> DynArray<'a> {
         }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = DynValue> {
+    pub fn iter(&self) -> impl Iterator<Item = DynValue<'_>> {
         let ptr = self.get_ptr();
         let len = self.get_len();
         let size = self.tp.size();
@@ -470,6 +478,7 @@ impl<'a> From<DynArray<'a>> for DynValue<'a> {
     }
 }
 
+/// A fixed-length string with a dynamic encoding.
 pub struct DynFixedString<'a> {
     buf: &'a [u8],
     unicode: bool,
@@ -529,6 +538,7 @@ impl<'a> From<DynFixedString<'a>> for DynValue<'a> {
     }
 }
 
+/// A variable-length string with a dynamic encoding.
 pub struct DynVarLenString<'a> {
     buf: &'a [u8],
     unicode: bool,
@@ -540,11 +550,7 @@ impl<'a> DynVarLenString<'a> {
     }
 
     fn get_ptr(&self) -> *const u8 {
-        if self.unicode {
-            self.as_unicode().as_ptr()
-        } else {
-            self.as_ascii().as_ptr()
-        }
+        if self.unicode { self.as_unicode().as_ptr() } else { self.as_ascii().as_ptr() }
     }
 
     fn raw_len(&self) -> usize {
@@ -633,6 +639,7 @@ impl<'a> From<DynVarLenString<'a>> for DynValue<'a> {
     }
 }
 
+/// A dynamically-typed string.
 #[derive(PartialEq, Eq)]
 pub enum DynString<'a> {
     Fixed(DynFixedString<'a>),
@@ -677,6 +684,7 @@ impl<'a> From<DynString<'a>> for DynValue<'a> {
     }
 }
 
+/// A borrowed value with dynamic type.
 #[derive(PartialEq)]
 pub enum DynValue<'a> {
     Scalar(DynScalar),
@@ -687,6 +695,7 @@ pub enum DynValue<'a> {
 }
 
 impl<'a> DynValue<'a> {
+    /// Constructs a new `DynValue` from a `TypeDescriptor` and a byte slice.
     pub fn new(tp: &'a TypeDescriptor, buf: &'a [u8]) -> Self {
         use TypeDescriptor::*;
         debug_assert_eq!(tp.size(), buf.len());
@@ -695,10 +704,10 @@ impl<'a> DynValue<'a> {
             Integer(size) | Unsigned(size) => DynInteger::read(buf, true, *size).into(),
             Float(size) => DynFloat::read(buf, *size).into(),
             Boolean => DynScalar::Boolean(read_raw(buf)).into(),
-            Enum(ref tp) => DynEnum::new(tp, DynInteger::read(buf, tp.signed, tp.size)).into(),
-            Compound(ref tp) => DynCompound::new(tp, buf).into(),
-            FixedArray(ref tp, n) => DynArray::new(tp, buf, Some(*n)).into(),
-            VarLenArray(ref tp) => DynArray::new(tp, buf, None).into(),
+            Enum(tp) => DynEnum::new(tp, DynInteger::read(buf, tp.signed, tp.size)).into(),
+            Compound(tp) => DynCompound::new(tp, buf).into(),
+            FixedArray(tp, n) => DynArray::new(tp, buf, Some(*n)).into(),
+            VarLenArray(tp) => DynArray::new(tp, buf, None).into(),
             FixedAscii(_) => DynFixedString::new(buf, false).into(),
             FixedUnicode(_) => DynFixedString::new(buf, true).into(),
             VarLenAscii => DynVarLenString::new(buf, false).into(),
@@ -749,12 +758,14 @@ impl Display for DynValue<'_> {
     }
 }
 
+/// An owned value with dynamic type.
 pub struct OwnedDynValue {
     tp: TypeDescriptor,
     buf: Box<[u8]>,
 }
 
 impl OwnedDynValue {
+    /// Constructs a new `OwnedDynValue` from the given value.
     pub fn new<T: H5Type>(value: T) -> Self {
         let ptr = (&value as *const T).cast::<u8>();
         let len = mem::size_of_val(&value);
@@ -763,10 +774,12 @@ impl OwnedDynValue {
         Self { tp: T::type_descriptor(), buf: buf.to_owned().into_boxed_slice() }
     }
 
-    pub fn get(&self) -> DynValue {
+    /// Returns a borrowed version of the contained value.
+    pub fn get(&self) -> DynValue<'_> {
         DynValue::new(&self.tp, &self.buf)
     }
 
+    /// Returns the value's type descriptor.
     pub fn type_descriptor(&self) -> &TypeDescriptor {
         &self.tp
     }
@@ -781,9 +794,12 @@ impl OwnedDynValue {
         Self { tp, buf }
     }
 
-    /// Cast to the concrete type
+    /// Tries to downcast the value to a concrete type.
     ///
-    /// Will fail if the type-descriptors are not equal
+    /// # Errors
+    ///
+    /// If the type descriptors of `self` and `T` are not equal, this will fail and return a
+    /// `Result::Err` containing the original value.
     pub fn cast<T: H5Type>(mut self) -> Result<T, Self> {
         use mem::MaybeUninit;
         if self.tp != T::type_descriptor() {

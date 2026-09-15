@@ -5,7 +5,7 @@ description = "Native bindings to the HDF5 library."
 links = "hdf5"
 readme = "README.md"
 categories = ["development-tools::ffi", "filesystem", "science"]
-version = "0.10.1"  # !V
+version = "0.12.3"  # !V
 rust-version.workspace = true
 authors.workspace = true
 keywords.workspace = true
@@ -41,7 +41,7 @@ pkg-config = "0.3"
 [target.'cfg(windows)'.build-dependencies]
 serde = "1.0"
 serde_derive = "1.0"
-winreg = { version = "0.55", features = ["serialization-serde"] }
+winreg = { version = "0.56", features = ["serialization-serde"] }
 
 [package.metadata.docs.rs]
 features = ["static", "zlib"]

@@ -1,11 +1,10 @@
 use std::ptr::{self, addr_of_mut};
 use std::slice;
-
-use lazy_static::lazy_static;
+use std::sync::LazyLock;
 
 use hdf5_sys::h5p::{H5Pget_chunk, H5Pget_filter_by_id2, H5Pmodify_filter};
-use hdf5_sys::h5t::{H5Tclose, H5Tget_class, H5Tget_size, H5Tget_super, H5T_ARRAY};
-use hdf5_sys::h5z::{H5Z_class2_t, H5Z_filter_t, H5Zregister, H5Z_CLASS_T_VERS, H5Z_FLAG_REVERSE};
+use hdf5_sys::h5t::{H5T_ARRAY, H5Tclose, H5Tget_class, H5Tget_size, H5Tget_super};
+use hdf5_sys::h5z::{H5Z_CLASS_T_VERS, H5Z_FLAG_REVERSE, H5Z_class2_t, H5Z_filter_t, H5Zregister};
 
 use crate::error::H5ErrorCode;
 use crate::globals::{H5E_CALLBACK, H5E_PLIST};
@@ -48,18 +47,16 @@ const BLOSC_FILTER_INFO: &H5Z_class2_t = &H5Z_class2_t {
     filter: Some(filter_blosc),
 };
 
-lazy_static! {
-    static ref BLOSC_INIT: Result<(), &'static str> = {
-        unsafe {
-            blosc_init();
-        }
-        let ret = unsafe { H5Zregister((BLOSC_FILTER_INFO as *const H5Z_class2_t).cast()) };
-        if H5ErrorCode::is_err_code(ret) {
-            return Err("Can't register Blosc filter");
-        }
-        Ok(())
-    };
-}
+static BLOSC_INIT: LazyLock<Result<(), &'static str>> = LazyLock::new(|| {
+    unsafe {
+        blosc_init();
+    }
+    let ret = unsafe { H5Zregister((BLOSC_FILTER_INFO as *const H5Z_class2_t).cast()) };
+    if H5ErrorCode::is_err_code(ret) {
+        return Err("Can't register Blosc filter");
+    }
+    Ok(())
+});
 
 pub fn register_blosc() -> Result<(), &'static str> {
     *BLOSC_INIT
@@ -119,11 +116,7 @@ extern "C" fn set_local_blosc(dcpl_id: hid_t, type_id: hid_t, _space_id: hid_t) 
     }
     values[3] = bufsize as _;
     let r = unsafe { H5Pmodify_filter(dcpl_id, BLOSC_FILTER_ID, flags, nelmts, values.as_ptr()) };
-    if r < 0 {
-        -1
-    } else {
-        1
-    }
+    if r < 0 { -1 } else { 1 }
 }
 
 struct BloscConfig {
@@ -148,6 +141,9 @@ impl Default for BloscConfig {
 }
 
 fn parse_blosc_cdata(cd_nelmts: size_t, cd_values: *const c_uint) -> Option<BloscConfig> {
+    if cd_values.is_null() || cd_nelmts < 1 {
+        return None;
+    }
     let cdata = unsafe { slice::from_raw_parts(cd_values, cd_nelmts as _) };
     let mut cfg = BloscConfig {
         typesize: cdata[2] as _,
@@ -193,6 +189,9 @@ unsafe extern "C" fn filter_blosc(
     buf_size: *mut size_t, buf: *mut *mut c_void,
 ) -> size_t {
     let cfg = if let Some(cfg) = parse_blosc_cdata(cd_nelmts, cd_values) {
+        if cfg.typesize == 0 {
+            return 0;
+        }
         cfg
     } else {
         return 0;
